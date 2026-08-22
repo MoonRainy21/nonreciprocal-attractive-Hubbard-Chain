@@ -80,13 +80,25 @@ def main() -> None:
     pd.DataFrame(profiles).to_csv(figure_data / "profiles.csv", index=False)
     pd.DataFrame(green_rows).to_csv(figure_data / "green_frequency.csv", index=False)
     pd.DataFrame(spectra).to_csv(figure_data / "spectra.csv", index=False)
+    # A physical branch has one canonical destination.  The full Fig. 4
+    # continuation is canonical for U=2, g=0.05; Fig. 3 retains only g=0.10.
+    canonical_fig3 = pd.concat([
+        data[(data["study"] == "fig3") & ~np.isclose(data["g"], 0.05)],
+        data[(data["study"] == "fig4") & np.isclose(data["g"], 0.05)].assign(study="fig3"),
+    ], ignore_index=True)
+    branch_ids = {(24, 0.05): "U2_L24_g0p05", (40, 0.05): "U2_L40_g0p05", (24, 0.10): "U2_L24_g0p10", (40, 0.10): "U2_L40_g0p10"}
+    canonical_fig3["branch_id"] = [branch_ids.get((int(L), round(float(g), 2)), "") for L, g in zip(canonical_fig3["L"], canonical_fig3["g"])]
     for study in ("fig2", "conditioning", "green", "fig3", "fig4"):
-        frame = data[data["study"] == study]
+        frame = canonical_fig3 if study == "fig3" else data[data["study"] == study]
         frame.to_csv(processed / f"{study}.csv", index=False)
         frame.to_csv(figure_data / f"{study}.csv", index=False)
-    thresholds = _thresholds(data)
+    threshold_data = pd.concat([data[data["study"].isin(["fig2", "conditioning", "green", "fig4"])], canonical_fig3], ignore_index=True)
+    thresholds = _thresholds(threshold_data)
     thresholds.to_csv(processed / "crossover_thresholds.csv", index=False)
     thresholds.to_csv(figure_data / "thresholds.csv", index=False)
+    gamma_brackets = _gamma_brackets(canonical_fig3)
+    gamma_brackets.to_csv(processed / "gamma_brackets.csv", index=False)
+    gamma_brackets.to_csv(figure_data / "gamma_brackets.csv", index=False)
     production_status = _production_status(data, thresholds, config)
     (figure_data / "production_status.json").write_text(json.dumps(production_status, indent=2), encoding="utf-8")
     snapshots = _fig4_snapshots(data)
@@ -104,6 +116,17 @@ def _thresholds(data: pd.DataFrame) -> pd.DataFrame:
             lam = _crossing(group, column, threshold)
             rows.append({"study": keys[0], "L": keys[1], "g": keys[2], "U": keys[3], "quantity": label, "threshold": threshold, "lambda_c": lam, "chi_c": lam * np.exp(keys[2] * keys[1]) if np.isfinite(lam) else np.nan})
     return pd.DataFrame(rows, columns=["study", "L", "g", "U", "quantity", "threshold", "lambda_c", "chi_c"])
+
+
+def _gamma_brackets(data: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    valid = data[(data["kind"] == "branch_trial") & (data["status"] == "SUCCESS") & data["accepted"].astype(bool) & (data["s_min"] >= 0.7)]
+    for (L, g, U), group in valid.groupby(["L", "g", "U"]):
+        group = group.sort_values("lambda")
+        below = group[group["gamma_max_over_t"] < 1e-4].tail(1)
+        above = group[group["gamma_max_over_t"] >= 1e-4].head(1)
+        rows.append({"L": L, "g": g, "U": U, "status": "BRACKETED" if not below.empty and not above.empty else "NOT_REACHED", "lambda_below": below["lambda"].iloc[0] if not below.empty else np.nan, "lambda_above": above["lambda"].iloc[0] if not above.empty else np.nan, "chi_below": below["chi"].iloc[0] if not below.empty else np.nan, "chi_above": above["chi"].iloc[0] if not above.empty else np.nan})
+    return pd.DataFrame(rows)
 
 
 def _production_status(data: pd.DataFrame, thresholds: pd.DataFrame, config: dict) -> dict:
