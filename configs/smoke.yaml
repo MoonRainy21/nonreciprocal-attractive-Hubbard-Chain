@@ -1,0 +1,59 @@
+common:
+  filling: 0.8
+  temperature: 0.0
+
+numerics:
+  field_tolerance: 1.0e-10
+  density_tolerance: 1.0e-10
+  number_tolerance: 1.0e-9
+  max_scf_iterations: 5000
+  max_mu_iterations: 42
+  mixing: 0.30
+  minimum_branch_overlap: 0.70
+  minimum_lambda_step: 1.0e-14
+  consecutive_converged_iterations: 3
+  mu_bounds: [-8.0, 8.0]
+  random_seed: 1729
+
+studies:
+  fig2:
+    U: 2.0
+    L: [4]
+    q: [0, 1]
+  conditioning:
+    U: 2.0
+    L: 4
+    q: [0, 1]
+    high_precision_L: 4
+    high_precision_q: [1]
+    precision: 40
+  green:
+    U: 2.0
+    L: 4
+    q: [0, 1]
+    omega_min: -2.0
+    omega_max: 2.0
+    n_omega: 21
+    eta: 0.05
+  fig3:
+    U: 2.0
+    L: [4]
+    g: [0.05]
+    coarse_lambda_points: 3
+    crossover_lambda_cap: 1.0e-3
+    refinement_points: 1
+  fig4:
+    U: 2.0
+    L: [4]
+    g: 0.05
+    coarse_lambda_points: 3
+    crossover_lambda_cap: 1.0
+    refinement_points: 1
+  fig5:
+    U: [1.0, 2.0]
+    L: [4]
+    g: 0.05
+    coarse_lambda_points: 3
+    crossover_lambda_cap: 1.0
+    refinement_points: 1
+    cross_u_step: 0.25

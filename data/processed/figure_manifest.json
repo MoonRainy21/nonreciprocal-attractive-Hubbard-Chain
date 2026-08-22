@@ -1,0 +1,37 @@
+{
+  "config_hash": "056697e838fdf90f8af053d13a5639d0d26706ba59f595f9bbc2d755d337fc52",
+  "source_config_hashes": [
+    "056697e838fdf90f8af053d13a5639d0d26706ba59f595f9bbc2d755d337fc52",
+    "11c503d6ff6b00667d3ff13428a2dc532eb4de588f7cc89be7d316f8c1b64552",
+    "15b94302192ba78686387044a8381d6ece75a3dbbd5f46a92a003247aa946718",
+    "31ac5298161861d82c15f52413b7e0f17b5920e454784a702e97a58cee3f93ae",
+    "486ec2a86089163714dfdc886d527a8cd2067e261cf9e10cf00bbac5f90ca5d9"
+  ],
+  "figures": {
+    "fig02_obc_covariance": [
+      "figure_data/fig2.csv",
+      "figure_data/profiles.csv"
+    ],
+    "fig03_weak_link_crossover": [
+      "figure_data/fig3.csv",
+      "figure_data/thresholds.csv"
+    ],
+    "fig04_pbc_endpoint": [
+      "figure_data/fig4.csv",
+      "figure_data/profiles.csv",
+      "figure_data/spectra.csv",
+      "figure_data/fig4_snapshots.csv"
+    ],
+    "figS1_conditioning": [
+      "figure_data/conditioning.csv"
+    ],
+    "figS2_green_covariance": [
+      "figure_data/green.csv",
+      "figure_data/green_frequency.csv"
+    ],
+    "figS3_branch_quality": [
+      "figure_data/fig3.csv",
+      "figure_data/fig4.csv"
+    ]
+  }
+}

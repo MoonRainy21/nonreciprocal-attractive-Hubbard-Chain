@@ -1,0 +1,125 @@
+"""Gauge-invariant diagnostics, spectra, and direct Green functions."""
+
+from __future__ import annotations
+
+import numpy as np
+import scipy.linalg
+from scipy.optimize import linear_sum_assignment
+
+from .model import Chain, ComplexArray, coordinates, nambu_similarity
+from .solver import Eigensystem, HFBState
+
+
+def relative_error(actual: np.ndarray, expected: np.ndarray) -> float:
+    """L2 relative difference with a safe zero-norm denominator."""
+
+    return float(np.linalg.norm(actual - expected) / max(np.linalg.norm(expected), 1.0e-30))
+
+
+def align_nambu_scale(reference: HFBState, candidate: HFBState) -> tuple[complex, float]:
+    """Align the global two-field normalization before component comparison."""
+
+    denominator = np.vdot(reference.delta_plus, reference.delta_plus)
+    if abs(denominator) < 1.0e-30:
+        return complex("nan"), float("nan")
+    scale = np.vdot(reference.delta_plus, candidate.delta_plus) / denominator
+    if abs(scale) < 1.0e-30:
+        return scale, float("inf")
+    aligned = candidate.delta_plus / scale
+    return scale, relative_error(aligned, reference.delta_plus)
+
+
+def metric_violation(state: HFBState) -> tuple[float, complex, bool]:
+    """Return OBC metric-conjugacy residual and its least-squares coefficient."""
+
+    x = coordinates(state.chain.L)
+    A = np.exp(-4.0 * state.chain.g * x) * np.conjugate(state.delta_plus)
+    denominator = np.vdot(A, A)
+    if abs(denominator) < 1.0e-30:
+        return float("nan"), complex("nan"), False
+    coefficient = np.vdot(A, state.delta_minus) / denominator
+    residual = float(np.linalg.norm(state.delta_minus - coefficient * A) / max(np.linalg.norm(state.delta_minus), 1.0e-30))
+    phase_stable = coefficient.real > 0.0 and abs(coefficient.imag) <= 1.0e-8 * max(abs(coefficient.real), 1.0e-30)
+    return residual, coefficient, bool(phase_stable)
+
+
+def pair_deformation(state: HFBState, reference: HFBState, bulk: bool) -> float:
+    """Relative deformation of the complex pair product, optionally in central half."""
+
+    current, initial = state.pair_product, reference.pair_product
+    if bulk:
+        selection = slice(state.chain.L // 4, 3 * state.chain.L // 4)
+        current, initial = current[selection], initial[selection]
+    return relative_error(current, initial)
+
+
+def occupied_overlap(old: Eigensystem, new: Eigensystem) -> float:
+    """Smallest principal singular value between occupied right subspaces."""
+
+    if old.right.size == 0 or new.right.size == 0:
+        return 0.0
+    old_q, _ = np.linalg.qr(old.right[:, old.occupied])
+    new_q, _ = np.linalg.qr(new.right[:, new.occupied])
+    singular = np.linalg.svd(old_q.conj().T @ new_q, compute_uv=False)
+    return float(np.min(singular)) if singular.size else 0.0
+
+
+def spectrum_distance(first: ComplexArray, second: ComplexArray) -> float:
+    """Hungarian-matched maximum distance between equal-size complex spectra."""
+
+    if first.size != second.size:
+        raise ValueError("Spectrum sizes differ.")
+    rows, columns = linear_sum_assignment(np.abs(first[:, None] - second[None, :]))
+    return float(np.max(np.abs(first[rows] - second[columns])))
+
+
+def gamma_max(state: HFBState) -> float:
+    """Dimensionless ``max |Im E| / t``."""
+
+    return float(np.max(np.abs(np.imag(state.eigensystem.values))) / state.chain.t)
+
+
+def complex_fraction(state: HFBState) -> float:
+    """Fraction of eigenvalues with ``|Im E| > 1e-8``."""
+
+    return float(np.mean(np.abs(np.imag(state.eigensystem.values)) > 1.0e-8))
+
+
+def min_spectrum_separation(state: HFBState) -> float:
+    """Minimum pairwise separation; this is not an exceptional-point claim."""
+
+    values = state.eigensystem.values
+    if values.size < 2:
+        return float("nan")
+    distances = np.abs(values[:, None] - values[None, :])
+    np.fill_diagonal(distances, np.inf)
+    return float(np.min(distances))
+
+
+def green(matrix: ComplexArray, omega: float, eta: float) -> ComplexArray:
+    """Directly solve ``(zI-H)G=I``; no eigenvector expansion is used."""
+
+    z = omega + 1j * eta
+    return scipy.linalg.solve(z * np.eye(matrix.shape[0], dtype=complex) - matrix, np.eye(matrix.shape[0]), check_finite=False)
+
+
+def green_covariance_error(nonhermitian: ComplexArray, hermitian: ComplexArray, chain: Chain) -> float:
+    """Check the exact OBC relation ``G_g=V^-1 G_0 V``."""
+
+    V = nambu_similarity(chain)
+    inverse = np.diag(1.0 / np.diag(V))
+    return relative_error(nonhermitian, inverse @ hermitian @ V)
+
+
+def particle_block(resolvent: ComplexArray) -> ComplexArray:
+    """Particle-particle block of a Nambu resolvent."""
+
+    L = resolvent.shape[0] // 2
+    return resolvent[:L, :L]
+
+
+def stripped_propagator(value: complex, i: int, j: int, chain: Chain) -> complex:
+    """Remove the known OBC factor ``exp[g(x_i-x_j)]`` from one propagator."""
+
+    x = coordinates(chain.L)
+    return value * np.exp(-chain.g * (x[i] - x[j]))

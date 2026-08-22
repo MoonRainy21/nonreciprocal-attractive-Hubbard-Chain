@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nhbdg-public-numerics"
+version = "0.1.0"
+description = "Independent public numerical package for self-consistent non-reciprocal Hubbard HFB"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "pandas>=2.0",
+  "matplotlib>=3.8",
+  "PyYAML>=6.0",
+  "Jinja2>=3.1",
+  "mpmath>=1.3",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+dev = ["ruff>=0.5"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

@@ -1,0 +1,66 @@
+common:
+  filling: 0.8
+  temperature: 0.0
+
+# Results generated under the preceding compatible paper configuration.  They
+# are reused only when their physical parameters lie in the present scope.
+reuse_config_hashes:
+  - 15b94302192ba78686387044a8381d6ece75a3dbbd5f46a92a003247aa946718
+  - 11c503d6ff6b00667d3ff13428a2dc532eb4de588f7cc89be7d316f8c1b64552
+  - 31ac5298161861d82c15f52413b7e0f17b5920e454784a702e97a58cee3f93ae
+  - 486ec2a86089163714dfdc886d527a8cd2067e261cf9e10cf00bbac5f90ca5d9
+
+numerics:
+  field_tolerance: 1.0e-10
+  density_tolerance: 1.0e-10
+  number_tolerance: 1.0e-9
+  max_scf_iterations: 5000
+  max_mu_iterations: 42
+  mixing: 0.30
+  minimum_branch_overlap: 0.70
+  minimum_lambda_step: 1.0e-14
+  consecutive_converged_iterations: 3
+  mu_bounds: [-8.0, 8.0]
+  random_seed: 1729
+
+studies:
+  fig2:
+    U: 2.0
+    L: [24, 40, 80, 120]
+    q: [0, 2, 4, 6, 8, 10]
+
+  conditioning:
+    U: 2.0
+    L: 80
+    q: [0, 4, 8, 12, 16]
+    high_precision_L: 24
+    high_precision_q: [8, 12]
+    precision: 80
+
+  green:
+    U: 2.0
+    L: 80
+    q: [0, 2, 6]
+    omega_min: -5.0
+    omega_max: 5.0
+    n_omega: 1001
+    eta: 0.02
+
+  fig3:
+    U: 2.0
+    branches:
+      - {L: 24, g: 0.05}
+      - {L: 24, g: 0.10}
+      - {L: 40, g: 0.05}
+      - {L: 40, g: 0.10}
+    coarse_lambda_points: 10
+    crossover_lambda_cap: 0.1
+    refinement_points: 3
+
+  fig4:
+    U: 2.0
+    L: [24, 40]
+    g: 0.05
+    coarse_lambda_points: 15
+    crossover_lambda_cap: 1.0
+    refinement_points: 3
