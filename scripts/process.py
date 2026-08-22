@@ -99,11 +99,12 @@ def main() -> None:
     gamma_brackets = _gamma_brackets(canonical_fig3)
     gamma_brackets.to_csv(processed / "gamma_brackets.csv", index=False)
     gamma_brackets.to_csv(figure_data / "gamma_brackets.csv", index=False)
-    production_status = _production_status(data, thresholds, config)
+    paired_audit_verdict = _paired_audit_verdict(processed / "paired_route_audit.json")
+    production_status = _production_status(data, thresholds, config, paired_audit_verdict)
     (figure_data / "production_status.json").write_text(json.dumps(production_status, indent=2), encoding="utf-8")
     snapshots = _fig4_snapshots(data)
     snapshots.to_csv(figure_data / "fig4_snapshots.csv", index=False)
-    manifest = {"config_hash": config_hash, "source_config_hashes": sorted(source_hashes), "figures": {"fig02_obc_covariance": ["figure_data/fig2.csv", "figure_data/profiles.csv"], "fig03_weak_link_crossover": ["figure_data/fig3.csv", "figure_data/thresholds.csv"], "fig04_pbc_endpoint": ["figure_data/fig4.csv", "figure_data/profiles.csv", "figure_data/spectra.csv", "figure_data/fig4_snapshots.csv"], "figS1_conditioning": ["figure_data/conditioning.csv"], "figS2_green_covariance": ["figure_data/green.csv", "figure_data/green_frequency.csv"], "figS3_branch_quality": ["figure_data/fig3.csv", "figure_data/fig4.csv"]}}
+    manifest = {"config_hash": config_hash, "source_config_hashes": sorted(source_hashes), "figures": {"fig02_obc_covariance": ["figure_data/fig2.csv", "figure_data/profiles.csv"], "fig03_weak_link_crossover": ["figure_data/fig3.csv", "figure_data/thresholds.csv"], "fig04_pbc_endpoint": ["figure_data/fig4.csv", "figure_data/profiles.csv", "figure_data/spectra.csv", "figure_data/fig4_snapshots.csv"], "figS1_conditioning": ["figure_data/conditioning.csv"], "figS2_green_covariance": ["figure_data/green.csv", "figure_data/green_frequency.csv"], "figS3_branch_quality": ["figure_data/fig3.csv"]}}
     (processed / "figure_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"[PROCESS] {len(data)} raw rows -> {processed}")
 
@@ -114,8 +115,14 @@ def _thresholds(data: pd.DataFrame) -> pd.DataFrame:
     for keys, group in valid.groupby(["study", "L", "g", "U"]):
         for label, column, threshold in (("metric_1e-4", "metric_violation", 1.0e-4), ("metric_1e-3", "metric_violation", 1.0e-3), ("metric_1e-2", "metric_violation", 1.0e-2), ("pair", "delta_P_bulk", 1.0e-2), ("gamma", "gamma_max_over_t", 1.0e-4)):
             lam = _crossing(group, column, threshold)
-            rows.append({"study": keys[0], "L": keys[1], "g": keys[2], "U": keys[3], "quantity": label, "threshold": threshold, "lambda_c": lam, "chi_c": lam * np.exp(keys[2] * keys[1]) if np.isfinite(lam) else np.nan})
-    return pd.DataFrame(rows, columns=["study", "L", "g", "U", "quantity", "threshold", "lambda_c", "chi_c"])
+            rows.append({
+                "study": keys[0], "L": keys[1], "g": keys[2], "U": keys[3], "quantity": label,
+                "threshold": threshold, "lambda_c": lam,
+                "chi_c": lam * np.exp(keys[2] * keys[1]) if np.isfinite(lam) else np.nan,
+                "status": "CROSSED" if np.isfinite(lam) else "NOT_REACHED",
+                "max_chi": float(group["chi"].max()),
+            })
+    return pd.DataFrame(rows, columns=["study", "L", "g", "U", "quantity", "threshold", "lambda_c", "chi_c", "status", "max_chi"])
 
 
 def _gamma_brackets(data: pd.DataFrame) -> pd.DataFrame:
@@ -129,7 +136,18 @@ def _gamma_brackets(data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _production_status(data: pd.DataFrame, thresholds: pd.DataFrame, config: dict) -> dict:
+def _paired_audit_verdict(path: Path) -> str:
+    """Read the saved paired-route verdict without repeating the audit solves."""
+
+    if not path.exists():
+        return "MISSING"
+    try:
+        return str(json.loads(path.read_text(encoding="utf-8")).get("final_verdict", "MISSING"))
+    except (OSError, json.JSONDecodeError):
+        return "INVALID"
+
+
+def _production_status(data: pd.DataFrame, thresholds: pd.DataFrame, config: dict, paired_audit_verdict: str) -> dict:
     """State which main figures have every required, branch-valid input."""
 
     fig3_branches = config["studies"]["fig3"].get("branches", [])
@@ -151,7 +169,9 @@ def _production_status(data: pd.DataFrame, thresholds: pd.DataFrame, config: dic
         "fig03_missing_metric_crossings": missing_fig3,
         "fig04_complete": not missing_fig4,
         "fig04_missing_pbc_endpoints": missing_fig4,
-        "final_status": "COMPLETE" if not missing_fig3 and not missing_fig4 else "INCOMPLETE",
+        "paired_route_audit_required": True,
+        "paired_route_audit_verdict": paired_audit_verdict,
+        "final_status": "COMPLETE" if not missing_fig3 and not missing_fig4 and paired_audit_verdict in {"PASS", "PASS_WITH_NOTE"} else "INCOMPLETE",
     }
 
 
