@@ -6,7 +6,7 @@ PAPER := configs/paper.yaml
 SMOKE := configs/smoke.yaml
 LOG_DIR := logs
 
-.PHONY: test lint smoke clean-output run-paper finish process figures reproduce \
+.PHONY: test lint smoke clean-output run-paper finish process figures revised-figures reproduce \
 	run-fig2 run-fig3 run-fig4 run-supplement fig2 fig3 fig4 supplement _reproduce
 
 test:

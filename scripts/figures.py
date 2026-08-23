@@ -12,9 +12,17 @@ from nhbdg.figures import make
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--figure", default="all", choices=["all", "fig02", "fig03", "fig04", "figS1", "figS2", "figS3"])
+    parser.add_argument(
+        "--output-dir",
+        default="figures",
+        help="repository-relative or absolute output directory (default: figures)",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    make(root / "data" / "processed" / "figure_data", root / "figures", args.figure)
+    output = Path(args.output_dir)
+    if not output.is_absolute():
+        output = root / output
+    make(root / "data" / "processed" / "figure_data", output, args.figure)
 
 
 if __name__ == "__main__":
