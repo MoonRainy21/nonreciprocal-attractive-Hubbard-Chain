@@ -7,7 +7,7 @@ import scipy.linalg
 from scipy.optimize import linear_sum_assignment
 
 from .model import Chain, ComplexArray, coordinates, nambu_similarity
-from .solver import Eigensystem, HFBState
+from .solver import Eigensystem, HFBState, occupied_projector
 
 
 def relative_error(actual: np.ndarray, expected: np.ndarray) -> float:
@@ -30,17 +30,69 @@ def align_nambu_scale(reference: HFBState, candidate: HFBState) -> tuple[complex
 
 
 def metric_violation(state: HFBState) -> tuple[float, complex, bool]:
-    """Return OBC metric-conjugacy residual and its least-squares coefficient."""
+    """Return the manuscript-defined OBC metric-conjugacy mismatch."""
 
     x = coordinates(state.chain.L)
     A = np.exp(-4.0 * state.chain.g * x) * np.conjugate(state.delta_plus)
     denominator = np.vdot(A, A)
     if abs(denominator) < 1.0e-30:
         return float("nan"), complex("nan"), False
-    coefficient = np.vdot(A, state.delta_minus) / denominator
-    residual = float(np.linalg.norm(state.delta_minus - coefficient * A) / max(np.linalg.norm(state.delta_minus), 1.0e-30))
-    phase_stable = coefficient.real > 0.0 and abs(coefficient.imag) <= 1.0e-8 * max(abs(coefficient.real), 1.0e-30)
-    return residual, coefficient, bool(phase_stable)
+    unconstrained = np.vdot(A, state.delta_minus) / denominator
+    coefficient = max(float(np.real(unconstrained)), 0.0)
+    fitted = coefficient * A
+    residual = float(
+        np.linalg.norm(state.delta_minus - fitted)
+        / (np.linalg.norm(state.delta_minus) + np.linalg.norm(fitted) + 1.0e-30)
+    )
+    phase_stable = coefficient > 0.0 and abs(np.imag(unconstrained)) <= 1.0e-8 * max(coefficient, 1.0e-30)
+    return residual, complex(coefficient), bool(phase_stable)
+
+
+def global_conjugacy_violation(state: HFBState) -> tuple[float, float]:
+    """Fit ``Delta_minus = K conj(Delta_plus)`` with real ``K >= 0``."""
+
+    reference = np.conjugate(state.delta_plus)
+    denominator = np.vdot(reference, reference)
+    if abs(denominator) < 1.0e-30:
+        return float("nan"), float("nan")
+    coefficient = max(float(np.real(np.vdot(reference, state.delta_minus) / denominator)), 0.0)
+    fitted = coefficient * reference
+    residual = np.linalg.norm(state.delta_minus - fitted) / (
+        np.linalg.norm(state.delta_minus) + np.linalg.norm(fitted) + 1.0e-30
+    )
+    return float(residual), coefficient
+
+
+def projector_diagnostics(eigensystem: Eigensystem) -> dict[str, float]:
+    """Return algebraic and spectral diagnostics for one occupied sheet."""
+
+    if eigensystem.values.size == 0:
+        return {
+            "projector_idempotency": float("nan"),
+            "projector_trace_error": float("nan"),
+            "biorthogonality_error": float("nan"),
+            "occupied_unoccupied_separation": float("nan"),
+            "real_line_gap": float("nan"),
+            "projector_norm": float("nan"),
+        }
+    projector = occupied_projector(eigensystem)
+    rank = int(np.count_nonzero(eigensystem.occupied))
+    occupied = eigensystem.values[eigensystem.occupied]
+    unoccupied = eigensystem.values[~eigensystem.occupied]
+    separation = (
+        float(np.min(np.abs(occupied[:, None] - unoccupied[None, :])))
+        if occupied.size and unoccupied.size
+        else float("nan")
+    )
+    normalization = eigensystem.left.conj().T @ eigensystem.right
+    return {
+        "projector_idempotency": relative_error(projector @ projector, projector),
+        "projector_trace_error": float(abs(np.trace(projector) - rank)),
+        "biorthogonality_error": relative_error(normalization, np.eye(normalization.shape[0])),
+        "occupied_unoccupied_separation": separation,
+        "real_line_gap": float(np.min(np.abs(np.real(eigensystem.values)))),
+        "projector_norm": float(np.linalg.norm(projector, ord=2)),
+    }
 
 
 def pair_deformation(state: HFBState, reference: HFBState, bulk: bool) -> float:

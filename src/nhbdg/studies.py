@@ -23,6 +23,7 @@ from .observables import (
     align_nambu_scale,
     complex_fraction,
     gamma_max,
+    global_conjugacy_violation,
     green,
     green_covariance_error,
     metric_violation,
@@ -30,6 +31,7 @@ from .observables import (
     occupied_overlap,
     pair_deformation,
     particle_block,
+    projector_diagnostics,
     relative_error,
     spectrum_distance,
     stripped_propagator,
@@ -415,6 +417,7 @@ def _load_state(directory: Path, metadata: dict[str, Any], status: dict[str, Any
         0, status["status"] == "SUCCESS", str(status["message"]), float(status.get("branch_overlap", float("nan"))),
         int(status.get("mu_evaluations", 1)), int(status.get("total_scf_iterations", 0)), float(status.get("wall_seconds", 0.0)),
         int(status.get("cached_mu_warm_starts", 0)),
+        float(status.get("max_density_imaginary", 0.0)),
     )
 
 
@@ -526,7 +529,7 @@ def _save(config: dict[str, Any], study: str, state: HFBState, kind: str, extra:
     directory.mkdir(parents=True, exist_ok=True)
     summary = _summary(state)
     metadata = {"run_id": run_id, "study": study, "kind": kind, "config_hash": config_hash, "git_commit": _git_commit(), "physical": {"L": state.chain.L, "U": state.chain.U, "g": state.chain.g, "lambda": state.chain.lambda_, "t": state.chain.t, "filling": state.chain.filling}, **extra}
-    status = {"status": "SUCCESS" if state.converged else "FAILED", "message": state.message, "field_residual": state.field_residual, "density_residual": state.density_residual, "number_residual": state.number_residual, "branch_overlap": state.branch_overlap, "mu_evaluations": state.mu_evaluations, "total_scf_iterations": state.total_scf_iterations, "wall_seconds": state.wall_seconds, "cached_mu_warm_starts": state.cached_mu_warm_starts}
+    status = {"status": "SUCCESS" if state.converged else "FAILED", "message": state.message, "field_residual": state.field_residual, "density_residual": state.density_residual, "number_residual": state.number_residual, "branch_overlap": state.branch_overlap, "mu_evaluations": state.mu_evaluations, "total_scf_iterations": state.total_scf_iterations, "wall_seconds": state.wall_seconds, "cached_mu_warm_starts": state.cached_mu_warm_starts, "max_density_imaginary": state.max_density_imaginary}
     (directory / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
     (directory / "status.json").write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")
     (directory / "observables.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
@@ -552,15 +555,18 @@ def _summary(state: HFBState) -> dict[str, Any]:
     pair = state.pair_product
     bulk = slice(state.chain.L // 4, 3 * state.chain.L // 4)
     metric, coefficient, stable = metric_violation(state) if state.chain.U > 0.0 else (float("nan"), complex("nan"), False)
+    global_metric, global_coefficient = global_conjugacy_violation(state) if state.chain.U > 0.0 else (float("nan"), float("nan"))
     return {
         "mu": state.mu,
         "bulk_pair_product_real": float(np.real(np.mean(pair[bulk]))),
         "bulk_pair_product_imag": float(np.imag(np.mean(pair[bulk]))),
         "metric_violation": metric, "metric_K_real": float(np.real(coefficient)), "metric_phase_stable": stable,
+        "global_conjugacy_violation": global_metric, "global_conjugacy_K": global_coefficient,
         "gamma_max_over_t": gamma_max(state) if state.eigensystem.values.size else float("nan"),
         "complex_fraction": complex_fraction(state) if state.eigensystem.values.size else float("nan"),
         "minimum_eigenvalue_separation": min_spectrum_separation(state),
         "right_condition": float(np.linalg.cond(state.eigensystem.right)) if state.eigensystem.right.size else float("inf"),
+        **projector_diagnostics(state.eigensystem),
     }
 
 

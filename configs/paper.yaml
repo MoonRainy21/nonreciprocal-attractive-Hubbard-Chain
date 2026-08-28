@@ -2,17 +2,10 @@ common:
   filling: 0.8
   temperature: 0.0
 
-# Results generated under the preceding compatible paper configuration.  They
-# are reused only when their physical parameters lie in the present scope.
-reuse_config_hashes:
-  - 15b94302192ba78686387044a8381d6ece75a3dbbd5f46a92a003247aa946718
-  - 11c503d6ff6b00667d3ff13428a2dc532eb4de588f7cc89be7d316f8c1b64552
-  - 31ac5298161861d82c15f52413b7e0f17b5920e454784a702e97a58cee3f93ae
-  - 486ec2a86089163714dfdc886d527a8cd2067e261cf9e10cf00bbac5f90ca5d9
-
 numerics:
   field_tolerance: 1.0e-10
   density_tolerance: 1.0e-10
+  density_imaginary_tolerance: 1.0e-10
   number_tolerance: 1.0e-9
   max_scf_iterations: 5000
   max_mu_iterations: 42

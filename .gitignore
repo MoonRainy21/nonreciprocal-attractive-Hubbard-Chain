@@ -1,7 +1,7 @@
 logs/
 data/raw/
 data/checkpoints/
-.venv/
+.venv*/
 __pycache__/
 *.py[cod]
 .pytest_cache/

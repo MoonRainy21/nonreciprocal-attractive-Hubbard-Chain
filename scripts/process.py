@@ -47,6 +47,7 @@ def main() -> None:
             "status": status["status"], "message": status["message"],
             "field_residual": status["field_residual"], "density_residual": status["density_residual"],
             "number_residual": status["number_residual"], "s_min": metadata.get("s_min", status["branch_overlap"]),
+            "max_density_imaginary": status.get("max_density_imaginary", np.nan),
             "mu_evaluations": status["mu_evaluations"], "total_scf_iterations": status["total_scf_iterations"],
             "wall_seconds": status["wall_seconds"], "accepted": metadata.get("accepted", True),
             "requested": metadata.get("requested", True), "reason": metadata.get("reason", ""),

@@ -56,6 +56,7 @@ class Numerics:
 
     field_tolerance: float = 1.0e-10
     density_tolerance: float = 1.0e-10
+    density_imaginary_tolerance: float = 1.0e-10
     number_tolerance: float = 1.0e-9
     max_scf_iterations: int = 5000
     max_mu_iterations: int = 42

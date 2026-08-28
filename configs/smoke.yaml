@@ -5,6 +5,7 @@ common:
 numerics:
   field_tolerance: 1.0e-10
   density_tolerance: 1.0e-10
+  density_imaginary_tolerance: 1.0e-10
   number_tolerance: 1.0e-9
   max_scf_iterations: 5000
   max_mu_iterations: 42

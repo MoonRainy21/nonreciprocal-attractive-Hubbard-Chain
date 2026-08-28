@@ -23,3 +23,11 @@ def test_fixed_mu_solver_converges_with_linear_mixing() -> None:
     state = solver.solve_at_mu(-1.0)
     assert state.converged
     assert state.field_residual < 1.0e-8
+
+
+def test_density_imaginary_is_measured_before_real_projection() -> None:
+    correlation = np.diag([0.4 + 2.0e-4j, 0.6 - 3.0e-4j]).astype(complex)
+    assert np.isclose(MeanFieldSolver._density_imaginary(correlation), 3.0e-4)
+    n_up, n_down, _, _ = MeanFieldSolver._observables(correlation)
+    assert np.allclose(n_up, [0.4])
+    assert np.allclose(n_down, [0.4])
