@@ -6,11 +6,17 @@ PAPER := configs/paper.yaml
 SMOKE := configs/smoke.yaml
 LOG_DIR := logs
 
-.PHONY: test lint smoke clean-output run-paper finish process figures archive revised-figures reproduce \
-	run-fig2 run-fig3 run-fig4 run-branch-audit run-supplement fig2 fig3 fig4 supplement _reproduce
+.PHONY: test test-code lint smoke clean-output run-paper finish process initial-process \
+	paired-route-audit figures archive revised-figures reproduce run-fig2 run-fig3 \
+	run-fig4 run-branch-audit run-supplement fig2 fig3 fig4 supplement _reproduce
 
 test:
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m pytest -q
+
+# These tests do not consume generated publication tables and can run before
+# a clean production campaign.  The complete suite runs after processing.
+test-code:
+	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m pytest -q --ignore=tests/test_publication_figure_data.py
 
 lint:
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m compileall -q src scripts tests
@@ -48,6 +54,12 @@ finish: run-fig3 run-fig4 process figures
 process:
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/process.py --config $(PAPER)
 
+initial-process:
+	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/process.py --config $(PAPER)
+
+paired-route-audit:
+	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/paired_route_audit.py
+
 figures:
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/figures.py --figure all
 
@@ -77,4 +89,4 @@ reproduce:
 	@mkdir -p $(LOG_DIR)
 	@set -o pipefail; $(MAKE) --no-print-directory _reproduce 2>&1 | tee $(LOG_DIR)/reproduce.log
 
-_reproduce: test lint run-paper process figures
+_reproduce: test-code lint run-paper initial-process paired-route-audit process figures test
