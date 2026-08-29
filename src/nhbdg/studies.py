@@ -686,20 +686,30 @@ def _hash(config: dict[str, Any]) -> str:
 
 
 def _git_provenance() -> dict[str, Any]:
-    """Record the exact revision and reject ambiguous dirty production runs."""
+    """Record the exact source revision, excluding generated output changes."""
 
     try:
+        source_pathspec = [
+            ".",
+            ":(exclude)data/raw/**",
+            ":(exclude)data/processed/**",
+            ":(exclude)figures/**",
+            ":(exclude)logs/**",
+            ":(exclude)artifacts/**",
+        ]
         commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL
         ).strip()
         status = subprocess.check_output(
-            ["git", "status", "--porcelain"],
+            ["git", "status", "--porcelain", "--", *source_pathspec],
             cwd=ROOT,
             text=True,
             stderr=subprocess.DEVNULL,
         )
         diff = subprocess.check_output(
-            ["git", "diff", "--binary", "HEAD"], cwd=ROOT, stderr=subprocess.DEVNULL
+            ["git", "diff", "--binary", "HEAD", "--", *source_pathspec],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
         )
         return {
             "git_commit": commit,
