@@ -3,6 +3,15 @@
   "fig03_missing_metric_crossings": [],
   "fig04_complete": true,
   "fig04_missing_pbc_endpoints": [],
+  "branch_audits_complete": true,
+  "missing_branch_audits": [],
+  "collapse_quality_complete": true,
+  "collapse_mean_log10_std": {
+    "lambda": 0.5539360130918883,
+    "chi": 0.532813624981023
+  },
+  "matched_gl_complete": true,
+  "provenance_complete": true,
   "paired_route_audit_required": true,
   "paired_route_audit_verdict": "PASS",
   "final_status": "COMPLETE"

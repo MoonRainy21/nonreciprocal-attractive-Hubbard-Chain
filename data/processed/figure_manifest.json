@@ -1,11 +1,7 @@
 {
-  "config_hash": "056697e838fdf90f8af053d13a5639d0d26706ba59f595f9bbc2d755d337fc52",
+  "config_hash": "fad38ae4cee1bd744751bfb0ca3a75545fb1a759045ad4e6c01d3b230936bb19",
   "source_config_hashes": [
-    "056697e838fdf90f8af053d13a5639d0d26706ba59f595f9bbc2d755d337fc52",
-    "11c503d6ff6b00667d3ff13428a2dc532eb4de588f7cc89be7d316f8c1b64552",
-    "15b94302192ba78686387044a8381d6ece75a3dbbd5f46a92a003247aa946718",
-    "31ac5298161861d82c15f52413b7e0f17b5920e454784a702e97a58cee3f93ae",
-    "486ec2a86089163714dfdc886d527a8cd2067e261cf9e10cf00bbac5f90ca5d9"
+    "fad38ae4cee1bd744751bfb0ca3a75545fb1a759045ad4e6c01d3b230936bb19"
   ],
   "figures": {
     "fig02_obc_covariance": [
@@ -31,6 +27,20 @@
     ],
     "figS3_branch_quality": [
       "figure_data/fig3.csv"
+    ]
+  },
+  "audits": {
+    "branch_and_filling": [
+      "figure_data/branch_audit.csv"
+    ],
+    "collapse_quality": [
+      "figure_data/collapse_quality.csv"
+    ],
+    "matched_gl_quality": [
+      "figure_data/matched_gl_quality.csv"
+    ],
+    "threshold_sensitivity": [
+      "figure_data/threshold_sensitivity.csv"
     ]
   }
 }
