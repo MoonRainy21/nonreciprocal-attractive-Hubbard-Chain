@@ -7,8 +7,8 @@ import hashlib
 import json
 import subprocess
 from dataclasses import replace
+from itertools import pairwise
 from pathlib import Path
-from time import perf_counter
 from typing import Any
 
 import mpmath
@@ -17,9 +17,17 @@ import yaml
 from scipy.optimize import linear_sum_assignment
 
 from .continuation import Branch, continue_branch
-from .fixed_filling import solve_fixed_filling
-from .model import Chain, Numerics, bdg_matrix, map_fields_from_hermitian, nambu_similarity, pbc_blocks
+from .fixed_filling import audit_filling_curve, solve_fixed_filling
+from .model import (
+    Chain,
+    Numerics,
+    bdg_matrix,
+    map_fields_from_hermitian,
+    nambu_similarity,
+    pbc_blocks,
+)
 from .observables import (
+    METRIC_EPSILON,
     align_nambu_scale,
     complex_fraction,
     gamma_max,
@@ -28,16 +36,15 @@ from .observables import (
     green_covariance_error,
     metric_violation,
     min_spectrum_separation,
-    occupied_overlap,
     pair_deformation,
+    pair_deformation_window,
     particle_block,
     projector_diagnostics,
     relative_error,
     spectrum_distance,
     stripped_propagator,
 )
-from .solver import Eigensystem, HFBState, MeanFieldSolver, occupied_projector
-
+from .solver import HFBState, MeanFieldSolver, occupied_projector
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -58,6 +65,7 @@ def run(config: dict[str, Any], study: str, filters: dict[str, set[float]] | Non
         "green": run_green,
         "fig3": run_fig3,
         "fig4": run_fig4,
+        "branch_audit": run_branch_audit,
     }
     requested = list(actions) if study == "all" else [study]
     for name in requested:
@@ -229,6 +237,56 @@ def run_fig4(config: dict[str, Any], filters: dict[str, set[float]]) -> None:
             _endpoint_checks(config, "fig4", branch.accepted[-1], numeric)
 
 
+def run_branch_audit(config: dict[str, Any], filters: dict[str, set[float]]) -> None:
+    """Audit full forward/reverse branches and local fixed-filling curves."""
+
+    numeric, section = _numerics(config), config["studies"]["branch_audit"]
+    for item in section["branches"]:
+        L, g, U = int(item["L"]), float(item["g"]), float(section["U"])
+        if not _selected(filters, "L", L) or not _selected(filters, "g", g):
+            continue
+        obc = _fixed_state(Chain(L, U, g=g, filling=float(config["common"]["filling"])), numeric, "rescaled")
+        forward_targets = [
+            *np.geomspace(1.0e-12, 1.0, int(section["continuation_points"])).tolist(),
+        ]
+        forward = continue_branch(obc, forward_targets, numeric)
+        _save_branch(config, "branch_audit", forward, seed_method="direct_obc")
+        if forward.terminated or not np.isclose(forward.accepted[-1].chain.lambda_, 1.0):
+            continue
+
+        endpoint = forward.accepted[-1]
+        reverse_targets = [
+            state.chain.lambda_ for state in reversed(forward.accepted[:-1])
+        ]
+        reverse = continue_branch(endpoint, reverse_targets, numeric)
+        _save_reverse_branch(config, reverse, obc)
+
+        middle = min(forward.accepted, key=lambda state: abs(state.chain.lambda_ - 0.1))
+        for location, reference in (("obc", obc), ("middle", middle), ("pbc", endpoint)):
+            solver = MeanFieldSolver(reference.chain, numeric, "rescaled")
+            audit = audit_filling_curve(
+                solver,
+                reference,
+                half_width=float(section["filling_audit_half_width"]),
+                points=int(section["filling_audit_points"]),
+            )
+            for index, state in enumerate(audit.states):
+                _save(
+                    config,
+                    "branch_audit",
+                    state,
+                    "filling_audit",
+                    {
+                        "audit_location": location,
+                        "audit_index": index,
+                        "audit_monotone": audit.monotone,
+                        "audit_target_crossings": audit.target_crossings,
+                        "audit_minimum_branch_overlap": audit.minimum_branch_overlap,
+                        "audit_maximum_density_imaginary": audit.maximum_density_imaginary,
+                    },
+                )
+
+
 
 def _threshold_branch(
     obc: HFBState,
@@ -282,7 +340,7 @@ def _threshold_branch(
 
 def _crossing_intervals(states: list[HFBState], reference: HFBState) -> list[tuple[HFBState, HFBState]]:
     intervals: dict[tuple[float, float], tuple[HFBState, HFBState]] = {}
-    for lower, upper in zip(states[:-1], states[1:]):
+    for lower, upper in pairwise(states):
         if upper.chain.lambda_ <= 0.0:
             continue
         for low, high in zip(_threshold_values(lower, reference), _threshold_values(upper, reference)):
@@ -418,6 +476,7 @@ def _load_state(directory: Path, metadata: dict[str, Any], status: dict[str, Any
         int(status.get("mu_evaluations", 1)), int(status.get("total_scf_iterations", 0)), float(status.get("wall_seconds", 0.0)),
         int(status.get("cached_mu_warm_starts", 0)),
         float(status.get("max_density_imaginary", 0.0)),
+        float(status.get("total_density_imaginary", 0.0)),
     )
 
 
@@ -528,8 +587,8 @@ def _save(config: dict[str, Any], study: str, state: HFBState, kind: str, extra:
     directory = ROOT / "data" / "raw" / study / run_id
     directory.mkdir(parents=True, exist_ok=True)
     summary = _summary(state)
-    metadata = {"run_id": run_id, "study": study, "kind": kind, "config_hash": config_hash, "git_commit": _git_commit(), "physical": {"L": state.chain.L, "U": state.chain.U, "g": state.chain.g, "lambda": state.chain.lambda_, "t": state.chain.t, "filling": state.chain.filling}, **extra}
-    status = {"status": "SUCCESS" if state.converged else "FAILED", "message": state.message, "field_residual": state.field_residual, "density_residual": state.density_residual, "number_residual": state.number_residual, "branch_overlap": state.branch_overlap, "mu_evaluations": state.mu_evaluations, "total_scf_iterations": state.total_scf_iterations, "wall_seconds": state.wall_seconds, "cached_mu_warm_starts": state.cached_mu_warm_starts, "max_density_imaginary": state.max_density_imaginary}
+    metadata = {"run_id": run_id, "study": study, "kind": kind, "config_hash": config_hash, **_git_provenance(), "physical": {"L": state.chain.L, "U": state.chain.U, "g": state.chain.g, "lambda": state.chain.lambda_, "t": state.chain.t, "filling": state.chain.filling}, **extra}
+    status = {"status": "SUCCESS" if state.converged else "FAILED", "message": state.message, "field_residual": state.field_residual, "density_residual": state.density_residual, "number_residual": state.number_residual, "branch_overlap": state.branch_overlap, "mu_evaluations": state.mu_evaluations, "total_scf_iterations": state.total_scf_iterations, "wall_seconds": state.wall_seconds, "cached_mu_warm_starts": state.cached_mu_warm_starts, "max_density_imaginary": state.max_density_imaginary, "total_density_imaginary": state.total_density_imaginary}
     (directory / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
     (directory / "status.json").write_text(json.dumps(status, indent=2, sort_keys=True), encoding="utf-8")
     (directory / "observables.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
@@ -551,6 +610,45 @@ def _save_branch(config: dict[str, Any], study: str, branch: Branch, seed_method
         _save(config, study, trial.state, "branch_trial", extra)
 
 
+def _save_reverse_branch(config: dict[str, Any], branch: Branch, obc_reference: HFBState) -> None:
+    """Persist a PBC-to-OBC audit and compare its endpoint with the OBC seed."""
+
+    for index, trial in enumerate(branch.trials):
+        _save(
+            config,
+            "branch_audit",
+            trial.state,
+            "reverse_branch_trial",
+            {
+                "accepted": trial.accepted,
+                "requested": trial.requested,
+                "reason": trial.reason,
+                "s_min": trial.s_min,
+                "trial_index": index,
+                "branch_terminated": branch.terminated,
+                "branch_message": branch.message,
+            },
+        )
+    endpoint = branch.accepted[-1]
+    distance = _endpoint_distance(endpoint, obc_reference)
+    if endpoint.eigensystem.values.size and obc_reference.eigensystem.values.size:
+        distance["projector_error_to_endpoint"] = relative_error(
+            occupied_projector(endpoint.eigensystem),
+            occupied_projector(obc_reference.eigensystem),
+        )
+    _save(
+        config,
+        "branch_audit",
+        endpoint,
+        "reverse_obc_endpoint",
+        {
+            **distance,
+            "branch_terminated": branch.terminated,
+            "branch_message": branch.message,
+        },
+    )
+
+
 def _summary(state: HFBState) -> dict[str, Any]:
     pair = state.pair_product
     bulk = slice(state.chain.L // 4, 3 * state.chain.L // 4)
@@ -560,7 +658,9 @@ def _summary(state: HFBState) -> dict[str, Any]:
         "mu": state.mu,
         "bulk_pair_product_real": float(np.real(np.mean(pair[bulk]))),
         "bulk_pair_product_imag": float(np.imag(np.mean(pair[bulk]))),
+        "max_pair_product_imaginary": float(np.max(np.abs(np.imag(pair)))),
         "metric_violation": metric, "metric_K_real": float(np.real(coefficient)), "metric_phase_stable": stable,
+        "metric_epsilon": METRIC_EPSILON,
         "global_conjugacy_violation": global_metric, "global_conjugacy_K": global_coefficient,
         "gamma_max_over_t": gamma_max(state) if state.eigensystem.values.size else float("nan"),
         "complex_fraction": complex_fraction(state) if state.eigensystem.values.size else float("nan"),
@@ -573,18 +673,41 @@ def _summary(state: HFBState) -> dict[str, Any]:
 def _state_diagnostics(state: HFBState, reference: HFBState) -> dict[str, float]:
     if state.chain.U == 0.0:
         return {"delta_P_full": float("nan"), "delta_P_bulk": float("nan")}
-    return {"delta_P_full": pair_deformation(state, reference, False), "delta_P_bulk": pair_deformation(state, reference, True)}
+    return {
+        "delta_P_full": pair_deformation(state, reference, False),
+        "delta_P_bulk": pair_deformation(state, reference, True),
+        "delta_P_bulk_one_third": pair_deformation_window(state, reference, 1.0 / 3.0),
+        "delta_P_bulk_two_thirds": pair_deformation_window(state, reference, 2.0 / 3.0),
+    }
 
 
 def _hash(config: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
 
 
-def _git_commit() -> str:
+def _git_provenance() -> dict[str, Any]:
+    """Record the exact revision and reject ambiguous dirty production runs."""
+
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        status = subprocess.check_output(
+            ["git", "status", "--porcelain"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        diff = subprocess.check_output(
+            ["git", "diff", "--binary", "HEAD"], cwd=ROOT, stderr=subprocess.DEVNULL
+        )
+        return {
+            "git_commit": commit,
+            "git_dirty": bool(status.strip()),
+            "git_diff_sha256": hashlib.sha256(diff).hexdigest(),
+        }
     except (OSError, subprocess.CalledProcessError):
-        return "UNKNOWN"
+        return {"git_commit": "UNKNOWN", "git_dirty": True, "git_diff_sha256": "UNKNOWN"}
 
 
 def _mp_similarity(matrix: np.ndarray, expected: np.ndarray, V: np.ndarray, digits: int) -> float:

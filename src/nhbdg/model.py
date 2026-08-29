@@ -12,7 +12,6 @@ from dataclasses import dataclass, replace
 import numpy as np
 from numpy.typing import NDArray
 
-
 ComplexArray = NDArray[np.complex128]
 RealArray = NDArray[np.float64]
 
@@ -44,7 +43,7 @@ class Chain:
 
         return self.g * (self.L - 1)
 
-    def with_link(self, lambda_: float) -> "Chain":
+    def with_link(self, lambda_: float) -> Chain:
         """Return the same chain with a new boundary-link strength."""
 
         return replace(self, lambda_=lambda_)
@@ -62,6 +61,9 @@ class Numerics:
     max_mu_iterations: int = 42
     mixing: float = 0.30
     minimum_branch_overlap: float = 0.70
+    projector_idempotency_tolerance: float = 1.0e-8
+    biorthogonality_tolerance: float = 1.0e-8
+    minimum_occupied_unoccupied_separation: float = 1.0e-10
     minimum_lambda_step: float = 1.0e-14
     consecutive_converged_iterations: int = 3
     mu_bounds: tuple[float, float] = (-8.0, 8.0)

@@ -6,8 +6,8 @@ PAPER := configs/paper.yaml
 SMOKE := configs/smoke.yaml
 LOG_DIR := logs
 
-.PHONY: test lint smoke clean-output run-paper finish process figures revised-figures reproduce \
-	run-fig2 run-fig3 run-fig4 run-supplement fig2 fig3 fig4 supplement _reproduce
+.PHONY: test lint smoke clean-output run-paper finish process figures archive revised-figures reproduce \
+	run-fig2 run-fig3 run-fig4 run-branch-audit run-supplement fig2 fig3 fig4 supplement _reproduce
 
 test:
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m pytest -q
@@ -32,11 +32,14 @@ run-fig3:
 run-fig4:
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/run.py --config $(PAPER) --study fig4
 
+run-branch-audit:
+	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/run.py --config $(PAPER) --study branch_audit
+
 run-supplement:
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/run.py --config $(PAPER) --study conditioning
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/run.py --config $(PAPER) --study green
 
-run-paper: run-fig2 run-supplement run-fig3 run-fig4
+run-paper: run-fig2 run-supplement run-fig3 run-fig4 run-branch-audit
 
 # Resume only missing paper branches, reusing compatible validated raw data
 # declared in configs/paper.yaml.  Unlike reproduce, this never cleans output.
@@ -47,6 +50,9 @@ process:
 
 figures:
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/figures.py --figure all
+
+archive:
+	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/archive.py
 
 fig2: run-fig2
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/process.py --config $(PAPER)

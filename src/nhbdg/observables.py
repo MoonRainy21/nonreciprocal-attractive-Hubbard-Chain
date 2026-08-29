@@ -9,6 +9,8 @@ from scipy.optimize import linear_sum_assignment
 from .model import Chain, ComplexArray, coordinates, nambu_similarity
 from .solver import Eigensystem, HFBState, occupied_projector
 
+METRIC_EPSILON = 1.0e-30
+
 
 def relative_error(actual: np.ndarray, expected: np.ndarray) -> float:
     """L2 relative difference with a safe zero-norm denominator."""
@@ -20,7 +22,7 @@ def align_nambu_scale(reference: HFBState, candidate: HFBState) -> tuple[complex
     """Align the global two-field normalization before component comparison."""
 
     denominator = np.vdot(reference.delta_plus, reference.delta_plus)
-    if abs(denominator) < 1.0e-30:
+    if abs(denominator) < METRIC_EPSILON:
         return complex("nan"), float("nan")
     scale = np.vdot(reference.delta_plus, candidate.delta_plus) / denominator
     if abs(scale) < 1.0e-30:
@@ -42,9 +44,9 @@ def metric_violation(state: HFBState) -> tuple[float, complex, bool]:
     fitted = coefficient * A
     residual = float(
         np.linalg.norm(state.delta_minus - fitted)
-        / (np.linalg.norm(state.delta_minus) + np.linalg.norm(fitted) + 1.0e-30)
+        / (np.linalg.norm(state.delta_minus) + np.linalg.norm(fitted) + METRIC_EPSILON)
     )
-    phase_stable = coefficient > 0.0 and abs(np.imag(unconstrained)) <= 1.0e-8 * max(coefficient, 1.0e-30)
+    phase_stable = coefficient > 0.0 and abs(np.imag(unconstrained)) <= 1.0e-8 * max(coefficient, METRIC_EPSILON)
     return residual, complex(coefficient), bool(phase_stable)
 
 
@@ -53,12 +55,12 @@ def global_conjugacy_violation(state: HFBState) -> tuple[float, float]:
 
     reference = np.conjugate(state.delta_plus)
     denominator = np.vdot(reference, reference)
-    if abs(denominator) < 1.0e-30:
+    if abs(denominator) < METRIC_EPSILON:
         return float("nan"), float("nan")
     coefficient = max(float(np.real(np.vdot(reference, state.delta_minus) / denominator)), 0.0)
     fitted = coefficient * reference
     residual = np.linalg.norm(state.delta_minus - fitted) / (
-        np.linalg.norm(state.delta_minus) + np.linalg.norm(fitted) + 1.0e-30
+        np.linalg.norm(state.delta_minus) + np.linalg.norm(fitted) + METRIC_EPSILON
     )
     return float(residual), coefficient
 
@@ -74,6 +76,8 @@ def projector_diagnostics(eigensystem: Eigensystem) -> dict[str, float]:
             "occupied_unoccupied_separation": float("nan"),
             "real_line_gap": float("nan"),
             "projector_norm": float("nan"),
+            "real_part_projector_difference": float("nan"),
+            "real_part_occupied_rank": float("nan"),
         }
     projector = occupied_projector(eigensystem)
     rank = int(np.count_nonzero(eigensystem.occupied))
@@ -85,6 +89,15 @@ def projector_diagnostics(eigensystem: Eigensystem) -> dict[str, float]:
         else float("nan")
     )
     normalization = eigensystem.left.conj().T @ eigensystem.right
+    real_occupied = np.real(eigensystem.values) < 0.0
+    if np.count_nonzero(real_occupied) == rank:
+        real_projector = (
+            eigensystem.right[:, real_occupied]
+            @ eigensystem.left[:, real_occupied].conj().T
+        )
+        real_projector_difference = relative_error(real_projector, projector)
+    else:
+        real_projector_difference = float("inf")
     return {
         "projector_idempotency": relative_error(projector @ projector, projector),
         "projector_trace_error": float(abs(np.trace(projector) - rank)),
@@ -92,6 +105,8 @@ def projector_diagnostics(eigensystem: Eigensystem) -> dict[str, float]:
         "occupied_unoccupied_separation": separation,
         "real_line_gap": float(np.min(np.abs(np.real(eigensystem.values)))),
         "projector_norm": float(np.linalg.norm(projector, ord=2)),
+        "real_part_projector_difference": real_projector_difference,
+        "real_part_occupied_rank": float(np.count_nonzero(real_occupied)),
     }
 
 
@@ -103,6 +118,17 @@ def pair_deformation(state: HFBState, reference: HFBState, bulk: bool) -> float:
         selection = slice(state.chain.L // 4, 3 * state.chain.L // 4)
         current, initial = current[selection], initial[selection]
     return relative_error(current, initial)
+
+
+def pair_deformation_window(state: HFBState, reference: HFBState, fraction: float) -> float:
+    """Return pair-product deformation in a centered fractional window."""
+
+    if not 0.0 < fraction <= 1.0:
+        raise ValueError("bulk fraction must lie in (0, 1]")
+    width = max(1, round(state.chain.L * fraction))
+    start = (state.chain.L - width) // 2
+    stop = start + width
+    return relative_error(state.pair_product[start:stop], reference.pair_product[start:stop])
 
 
 def occupied_overlap(old: Eigensystem, new: Eigensystem) -> float:

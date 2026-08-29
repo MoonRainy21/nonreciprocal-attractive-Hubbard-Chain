@@ -11,6 +11,9 @@ numerics:
   max_mu_iterations: 42
   mixing: 0.30
   minimum_branch_overlap: 0.70
+  projector_idempotency_tolerance: 1.0e-8
+  biorthogonality_tolerance: 1.0e-8
+  minimum_occupied_unoccupied_separation: 1.0e-10
   minimum_lambda_step: 1.0e-14
   consecutive_converged_iterations: 3
   mu_bounds: [-8.0, 8.0]
@@ -50,6 +53,13 @@ studies:
     coarse_lambda_points: 3
     crossover_lambda_cap: 1.0
     refinement_points: 1
+  branch_audit:
+    U: 2.0
+    branches:
+      - {L: 4, g: 0.05}
+    continuation_points: 3
+    filling_audit_points: 3
+    filling_audit_half_width: 0.02
   fig5:
     U: [1.0, 2.0]
     L: [4]

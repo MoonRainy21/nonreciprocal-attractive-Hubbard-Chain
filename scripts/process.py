@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -40,6 +39,8 @@ def main() -> None:
         row = {
             "run_id": metadata["run_id"], "study": metadata["study"], "kind": metadata["kind"],
             "config_hash": config_hash, "git_commit": metadata["git_commit"],
+            "git_dirty": metadata.get("git_dirty", True),
+            "git_diff_sha256": metadata.get("git_diff_sha256", "UNKNOWN"),
             "source_config_hash": metadata["config_hash"],
             "L": physical["L"], "U": physical["U"], "g": physical["g"],
             "q": physical["g"] * (physical["L"] - 1), "lambda": physical["lambda"],
@@ -48,6 +49,7 @@ def main() -> None:
             "field_residual": status["field_residual"], "density_residual": status["density_residual"],
             "number_residual": status["number_residual"], "s_min": metadata.get("s_min", status["branch_overlap"]),
             "max_density_imaginary": status.get("max_density_imaginary", np.nan),
+            "total_density_imaginary": status.get("total_density_imaginary", np.nan),
             "mu_evaluations": status["mu_evaluations"], "total_scf_iterations": status["total_scf_iterations"],
             "wall_seconds": status["wall_seconds"], "accepted": metadata.get("accepted", True),
             "requested": metadata.get("requested", True), "reason": metadata.get("reason", ""),
@@ -89,7 +91,7 @@ def main() -> None:
     ], ignore_index=True)
     branch_ids = {(24, 0.05): "U2_L24_g0p05", (40, 0.05): "U2_L40_g0p05", (24, 0.10): "U2_L24_g0p10", (40, 0.10): "U2_L40_g0p10"}
     canonical_fig3["branch_id"] = [branch_ids.get((int(L), round(float(g), 2)), "") for L, g in zip(canonical_fig3["L"], canonical_fig3["g"])]
-    for study in ("fig2", "conditioning", "green", "fig3", "fig4"):
+    for study in ("fig2", "conditioning", "green", "fig3", "fig4", "branch_audit"):
         frame = canonical_fig3 if study == "fig3" else data[data["study"] == study]
         frame.to_csv(processed / f"{study}.csv", index=False)
         frame.to_csv(figure_data / f"{study}.csv", index=False)
@@ -97,15 +99,24 @@ def main() -> None:
     thresholds = _thresholds(threshold_data)
     thresholds.to_csv(processed / "crossover_thresholds.csv", index=False)
     thresholds.to_csv(figure_data / "thresholds.csv", index=False)
+    threshold_sensitivity = _threshold_sensitivity(threshold_data)
+    threshold_sensitivity.to_csv(processed / "threshold_sensitivity.csv", index=False)
+    threshold_sensitivity.to_csv(figure_data / "threshold_sensitivity.csv", index=False)
     gamma_brackets = _gamma_brackets(canonical_fig3)
     gamma_brackets.to_csv(processed / "gamma_brackets.csv", index=False)
     gamma_brackets.to_csv(figure_data / "gamma_brackets.csv", index=False)
+    collapse_quality = _collapse_quality(data[data["study"] == "branch_audit"])
+    collapse_quality.to_csv(processed / "collapse_quality.csv", index=False)
+    collapse_quality.to_csv(figure_data / "collapse_quality.csv", index=False)
+    matched_gl_quality = _matched_gl_quality(data[data["study"] == "branch_audit"])
+    matched_gl_quality.to_csv(processed / "matched_gl_quality.csv", index=False)
+    matched_gl_quality.to_csv(figure_data / "matched_gl_quality.csv", index=False)
     paired_audit_verdict = _paired_audit_verdict(processed / "paired_route_audit.json")
-    production_status = _production_status(data, thresholds, config, paired_audit_verdict)
+    production_status = _production_status(data, thresholds, collapse_quality, matched_gl_quality, config, paired_audit_verdict)
     (figure_data / "production_status.json").write_text(json.dumps(production_status, indent=2), encoding="utf-8")
     snapshots = _fig4_snapshots(data)
     snapshots.to_csv(figure_data / "fig4_snapshots.csv", index=False)
-    manifest = {"config_hash": config_hash, "source_config_hashes": sorted(source_hashes), "figures": {"fig02_obc_covariance": ["figure_data/fig2.csv", "figure_data/profiles.csv"], "fig03_weak_link_crossover": ["figure_data/fig3.csv", "figure_data/thresholds.csv"], "fig04_pbc_endpoint": ["figure_data/fig4.csv", "figure_data/profiles.csv", "figure_data/spectra.csv", "figure_data/fig4_snapshots.csv"], "figS1_conditioning": ["figure_data/conditioning.csv"], "figS2_green_covariance": ["figure_data/green.csv", "figure_data/green_frequency.csv"], "figS3_branch_quality": ["figure_data/fig3.csv"]}}
+    manifest = {"config_hash": config_hash, "source_config_hashes": sorted(source_hashes), "figures": {"fig02_obc_covariance": ["figure_data/fig2.csv", "figure_data/profiles.csv"], "fig03_weak_link_crossover": ["figure_data/fig3.csv", "figure_data/thresholds.csv"], "fig04_pbc_endpoint": ["figure_data/fig4.csv", "figure_data/profiles.csv", "figure_data/spectra.csv", "figure_data/fig4_snapshots.csv"], "figS1_conditioning": ["figure_data/conditioning.csv"], "figS2_green_covariance": ["figure_data/green.csv", "figure_data/green_frequency.csv"], "figS3_branch_quality": ["figure_data/fig3.csv"]}, "audits": {"branch_and_filling": ["figure_data/branch_audit.csv"], "collapse_quality": ["figure_data/collapse_quality.csv"], "matched_gl_quality": ["figure_data/matched_gl_quality.csv"], "threshold_sensitivity": ["figure_data/threshold_sensitivity.csv"]}}
     (processed / "figure_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"[PROCESS] {len(data)} raw rows -> {processed}")
 
@@ -137,6 +148,38 @@ def _gamma_brackets(data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _threshold_sensitivity(data: pd.DataFrame) -> pd.DataFrame:
+    """Compare the 1% pair threshold across centered bulk windows."""
+
+    rows = []
+    valid = data[
+        (data["kind"] == "branch_trial")
+        & (data["status"] == "SUCCESS")
+        & data["accepted"].astype(bool)
+        & (data["s_min"] >= 0.7)
+    ]
+    columns = (
+        ("one_third", "delta_P_bulk_one_third"),
+        ("one_half", "delta_P_bulk"),
+        ("two_thirds", "delta_P_bulk_two_thirds"),
+        ("full", "delta_P_full"),
+    )
+    for (study, L, g, U), group in valid.groupby(["study", "L", "g", "U"]):
+        for window, column in columns:
+            value = _crossing(group, column, 1.0e-2)
+            rows.append({
+                "study": study,
+                "L": L,
+                "g": g,
+                "U": U,
+                "window": window,
+                "lambda_c": value,
+                "chi_c": value * np.exp(g * L) if np.isfinite(value) else np.nan,
+                "status": "CROSSED" if np.isfinite(value) else "NOT_REACHED",
+            })
+    return pd.DataFrame(rows)
+
+
 def _paired_audit_verdict(path: Path) -> str:
     """Read the saved paired-route verdict without repeating the audit solves."""
 
@@ -148,7 +191,93 @@ def _paired_audit_verdict(path: Path) -> str:
         return "INVALID"
 
 
-def _production_status(data: pd.DataFrame, thresholds: pd.DataFrame, config: dict, paired_audit_verdict: str) -> dict:
+def _collapse_quality(data: pd.DataFrame, grid_points: int = 101) -> pd.DataFrame:
+    """Quantify curve-to-curve scatter on common logarithmic coordinates."""
+
+    valid = data[
+        (data["kind"] == "branch_trial")
+        & (data["status"] == "SUCCESS")
+        & data["accepted"].astype(bool)
+        & (data["metric_violation"] > 0.0)
+    ]
+    rows = []
+    for coordinate in ("lambda", "chi"):
+        curves = []
+        for _, group in valid.groupby(["L", "g"]):
+            group = group[(group[coordinate] > 0.0)].sort_values(coordinate).drop_duplicates(coordinate)
+            if len(group) >= 2:
+                curves.append(group)
+        if len(curves) < 2:
+            continue
+        lower = max(float(group[coordinate].min()) for group in curves)
+        upper = min(float(group[coordinate].max()) for group in curves)
+        if not 0.0 < lower < upper:
+            continue
+        grid = np.linspace(np.log10(lower), np.log10(upper), grid_points)
+        interpolated = np.vstack([
+            np.interp(
+                grid,
+                np.log10(group[coordinate].to_numpy(float)),
+                np.log10(group["metric_violation"].to_numpy(float)),
+            )
+            for group in curves
+        ])
+        scatter = np.std(interpolated, axis=0)
+        rows.append({
+            "coordinate": coordinate,
+            "branch_count": len(curves),
+            "common_min": lower,
+            "common_max": upper,
+            "mean_log10_std": float(np.mean(scatter)),
+            "max_log10_std": float(np.max(scatter)),
+        })
+    return pd.DataFrame(rows)
+
+
+def _matched_gl_quality(data: pd.DataFrame, grid_points: int = 101) -> pd.DataFrame:
+    """Compare distinct ``(L,g)`` branches with the same accumulated ``gL``."""
+
+    valid = data[
+        (data["kind"] == "branch_trial")
+        & (data["status"] == "SUCCESS")
+        & data["accepted"].astype(bool)
+        & (data["chi"] > 0.0)
+        & (data["metric_violation"] > 0.0)
+    ]
+    groups = {
+        (int(L), float(g)): group.sort_values("chi").drop_duplicates("chi")
+        for (L, g), group in valid.groupby(["L", "g"])
+    }
+    rows = []
+    keys = sorted(groups)
+    for index, first in enumerate(keys):
+        for second in keys[index + 1:]:
+            if first == second or not np.isclose(first[0] * first[1], second[0] * second[1], atol=1.0e-12):
+                continue
+            left, right = groups[first], groups[second]
+            lower = max(float(left["chi"].min()), float(right["chi"].min()))
+            upper = min(float(left["chi"].max()), float(right["chi"].max()))
+            if not 0.0 < lower < upper:
+                continue
+            grid = np.linspace(np.log10(lower), np.log10(upper), grid_points)
+            left_values = np.interp(grid, np.log10(left["chi"]), np.log10(left["metric_violation"]))
+            right_values = np.interp(grid, np.log10(right["chi"]), np.log10(right["metric_violation"]))
+            difference = np.abs(left_values - right_values)
+            rows.append({
+                "L_first": first[0],
+                "g_first": first[1],
+                "L_second": second[0],
+                "g_second": second[1],
+                "gL": first[0] * first[1],
+                "common_chi_min": lower,
+                "common_chi_max": upper,
+                "mean_abs_log10_difference": float(np.mean(difference)),
+                "max_abs_log10_difference": float(np.max(difference)),
+            })
+    return pd.DataFrame(rows)
+
+
+def _production_status(data: pd.DataFrame, thresholds: pd.DataFrame, collapse_quality: pd.DataFrame, matched_gl_quality: pd.DataFrame, config: dict, paired_audit_verdict: str) -> dict:
     """State which main figures have every required, branch-valid input."""
 
     fig3_branches = config["studies"]["fig3"].get("branches", [])
@@ -165,14 +294,62 @@ def _production_status(data: pd.DataFrame, thresholds: pd.DataFrame, config: dic
 
     fig4_valid = data[(data["study"] == "fig4") & (data["kind"] == "branch_trial") & (data["status"] == "SUCCESS") & data["accepted"].astype(bool) & (data["s_min"] >= 0.7) & np.isclose(data["lambda"], 1.0)]
     missing_fig4 = [int(L) for L in config["studies"]["fig4"]["L"] if fig4_valid[fig4_valid["L"] == int(L)].empty]
+    collapse = collapse_quality.set_index("coordinate")["mean_log10_std"] if not collapse_quality.empty else pd.Series(dtype=float)
+    collapse_improved = bool({"lambda", "chi"} <= set(collapse.index) and collapse["chi"] < collapse["lambda"])
+    matched_gl_complete = not matched_gl_quality.empty
+    dirty = data.get("git_dirty", pd.Series(True, index=data.index)).map(
+        lambda value: value if isinstance(value, (bool, np.bool_)) else str(value).lower() == "true"
+    )
+    provenance_complete = bool(
+        not data.empty
+        and "git_dirty" in data
+        and not dirty.any()
+        and (data["git_commit"] != "UNKNOWN").all()
+    )
+    missing_audits = []
+    audit_config = config["studies"].get("branch_audit", {})
+    for item in audit_config.get("branches", []):
+        L, g = int(item["L"]), float(item["g"])
+        branch = data[(data["study"] == "branch_audit") & (data["L"] == L) & np.isclose(data["g"], g)]
+        forward = branch[(branch["kind"] == "branch_trial") & np.isclose(branch["lambda"], 1.0) & (branch["status"] == "SUCCESS") & branch["accepted"].astype(bool)]
+        reverse = branch[(branch["kind"] == "reverse_obc_endpoint") & np.isclose(branch["lambda"], 0.0) & (branch["status"] == "SUCCESS")]
+        filling = branch[(branch["kind"] == "filling_audit") & (branch["status"] == "SUCCESS")]
+        locations = set(filling.get("audit_location", pd.Series(dtype=str)).dropna())
+        filling_ok = (
+            locations == {"obc", "middle", "pbc"}
+            and not filling.empty
+            and filling["audit_monotone"].astype(bool).all()
+            and (filling["audit_target_crossings"] == 1).all()
+        )
+        reverse_ok = (
+            not reverse.empty
+            and float(reverse["pair_product_error_to_endpoint"].iloc[-1]) < 1.0e-7
+            and float(reverse["density_error_to_endpoint"].iloc[-1]) < 1.0e-7
+            and float(reverse["projector_error_to_endpoint"].iloc[-1]) < 1.0e-7
+        )
+        pbc_ok = (
+            not forward.empty
+            and float(forward["global_conjugacy_violation"].iloc[-1]) < 1.0e-8
+            and float(forward["max_pair_product_imaginary"].iloc[-1]) < 1.0e-8
+            and float(forward["projector_idempotency"].iloc[-1]) < 1.0e-8
+            and float(forward["biorthogonality_error"].iloc[-1]) < 1.0e-8
+        )
+        if not pbc_ok or not reverse_ok or not filling_ok:
+            missing_audits.append({"L": L, "g": g})
     return {
         "fig03_complete": not missing_fig3,
         "fig03_missing_metric_crossings": missing_fig3,
         "fig04_complete": not missing_fig4,
         "fig04_missing_pbc_endpoints": missing_fig4,
+        "branch_audits_complete": not missing_audits,
+        "missing_branch_audits": missing_audits,
+        "collapse_quality_complete": collapse_improved,
+        "collapse_mean_log10_std": collapse.to_dict(),
+        "matched_gl_complete": matched_gl_complete,
+        "provenance_complete": provenance_complete,
         "paired_route_audit_required": True,
         "paired_route_audit_verdict": paired_audit_verdict,
-        "final_status": "COMPLETE" if not missing_fig3 and not missing_fig4 and paired_audit_verdict in {"PASS", "PASS_WITH_NOTE"} else "INCOMPLETE",
+        "final_status": "COMPLETE" if not missing_fig3 and not missing_fig4 and not missing_audits and collapse_improved and matched_gl_complete and provenance_complete and paired_audit_verdict in {"PASS", "PASS_WITH_NOTE"} else "INCOMPLETE",
     }
 
 
@@ -201,6 +378,11 @@ def _within_scope(metadata: dict, config: dict) -> bool:
             return False
         # Hermitian seeds and bandwidth controls deliberately have g=0.
         return kind in {"bandwidth_control", "hermitian_seed_direct", "cross_u_seed", "cross_u_reference", "hermitian_seed_failed"} or close(g, section["g"])
+    if study == "branch_audit":
+        return close(U, section["U"]) and any(
+            L == int(item["L"]) and close(g, item["g"])
+            for item in section["branches"]
+        )
     return False
 
 

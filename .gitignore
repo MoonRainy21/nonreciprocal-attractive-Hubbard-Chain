@@ -1,4 +1,5 @@
 logs/
+artifacts/
 data/raw/
 data/checkpoints/
 .venv*/

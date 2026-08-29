@@ -9,8 +9,15 @@ import numpy as np
 import scipy.linalg
 from scipy.optimize import linear_sum_assignment
 
-from .model import Chain, ComplexArray, Numerics, RealArray, bdg_matrix, coordinates, nambu_similarity
-
+from .model import (
+    Chain,
+    ComplexArray,
+    Numerics,
+    RealArray,
+    bdg_matrix,
+    coordinates,
+    nambu_similarity,
+)
 
 Representation = Literal["raw", "rescaled", "hermitian"]
 
@@ -48,6 +55,7 @@ class HFBState:
     wall_seconds: float = 0.0
     cached_mu_warm_starts: int = 0
     max_density_imaginary: float = 0.0
+    total_density_imaginary: float = 0.0
 
     @property
     def density(self) -> RealArray:
@@ -130,6 +138,7 @@ class MeanFieldSolver:
                 return self._failed_state(mu, physical_plus, physical_minus, n_up, n_down, iteration, str(error))
             correlation = self._physical_correlation(eigensystem_i, inverse)
             density_imaginary = self._density_imaginary(correlation)
+            total_density_imaginary = self._total_density_imaginary(correlation)
             if density_imaginary > self.numerics.density_imaginary_tolerance:
                 return self._failed_state(
                     mu,
@@ -144,6 +153,7 @@ class MeanFieldSolver:
                         f"{self.numerics.density_imaginary_tolerance:.6e}"
                     ),
                     max_density_imaginary=density_imaginary,
+                    total_density_imaginary=total_density_imaginary,
                 )
             observed_up, observed_down, F, F_bar = self._observables(correlation)
             physical_eigensystem = self._from_solver_frame(eigensystem_i)
@@ -158,7 +168,9 @@ class MeanFieldSolver:
                 return HFBState(
                     self.chain, mu, zeros, zeros, observed_up, observed_down, physical_eigensystem,
                     0.0, 0.0, abs(float(np.mean(observed_up + observed_down)) - self.chain.filling),
-                    iteration, True, "SUCCESS", overlap, max_density_imaginary=density_imaginary,
+                    iteration, True, "SUCCESS", overlap,
+                    max_density_imaginary=density_imaginary,
+                    total_density_imaginary=total_density_imaginary,
                 )
 
             target_plus, target_minus = -U * F, -U * F_bar
@@ -187,7 +199,9 @@ class MeanFieldSolver:
                     self.chain, mu, physical_plus, physical_minus, n_up, n_down, physical_eigensystem,
                     field_residual, density_residual,
                     abs(float(np.mean(observed_up + observed_down)) - self.chain.filling),
-                    iteration, True, "SUCCESS", overlap, max_density_imaginary=density_imaginary,
+                    iteration, True, "SUCCESS", overlap,
+                    max_density_imaginary=density_imaginary,
+                    total_density_imaginary=total_density_imaginary,
                 )
             plus_i = (1.0 - mixing) * plus_i + mixing * target_plus_i
             minus_i = (1.0 - mixing) * minus_i + mixing * target_minus_i
@@ -303,6 +317,15 @@ class MeanFieldSolver:
         return float(max(np.max(np.abs(np.imag(up))), np.max(np.abs(np.imag(down)))))
 
     @staticmethod
+    def _total_density_imaginary(correlation: ComplexArray) -> float:
+        """Return the imaginary part of the mean spin-summed density."""
+
+        L = correlation.shape[0] // 2
+        up = np.diag(correlation[:L, :L])
+        down = 1.0 - np.diag(correlation[L:, L:])
+        return float(abs(np.imag(np.mean(up + down))))
+
+    @staticmethod
     def _physical_correlation(eig: Eigensystem, inverse: ComplexArray | None) -> ComplexArray:
         right, left = eig.right[:, eig.occupied], eig.left[:, eig.occupied]
         correlation = right @ left.conj().T
@@ -311,6 +334,7 @@ class MeanFieldSolver:
     def _failed_state(
         self, mu: float, plus: ComplexArray, minus: ComplexArray, n_up: RealArray,
         n_down: RealArray, iteration: int, error: str, max_density_imaginary: float = 0.0,
+        total_density_imaginary: float = 0.0,
     ) -> HFBState:
         empty = Eigensystem(np.empty(0, complex), np.empty((0, 0), complex), np.empty((0, 0), complex), np.empty(0, bool))
         return HFBState(
@@ -318,6 +342,7 @@ class MeanFieldSolver:
             abs(float(np.mean(n_up + n_down)) - self.chain.filling), iteration, False,
             error if error.startswith("COMPLEX_DENSITY:") else f"DEFECTIVE_EIGENSYSTEM: {error}",
             max_density_imaginary=max_density_imaginary,
+            total_density_imaginary=total_density_imaginary,
         )
 
 

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 import numpy as np
 
 from .fixed_filling import solve_fixed_filling
 from .model import Numerics
-from .observables import occupied_overlap
+from .observables import occupied_overlap, projector_diagnostics
 from .solver import HFBState, MeanFieldSolver
 
 
@@ -39,7 +40,7 @@ def continue_branch(
     numerics: Numerics,
     max_consecutive_scf_failures: int | None = None,
 ) -> Branch:
-    """Track one OBC-connected branch with log-midpoint subdivision.
+    """Track an occupied branch in either direction with midpoint subdivision.
 
     A candidate is accepted only after its fixed-filling HFB solve converges,
     field and number residuals pass the published gate, and the occupied
@@ -50,8 +51,24 @@ def continue_branch(
     if not obc_state.converged:
         return Branch([obc_state], [], True, "OBC seed did not converge")
     accepted, trials, current = [obc_state], [], obc_state
-    for goal in sorted({float(value) for value in lambda_targets if value > 0.0}):
-        if goal <= current.chain.lambda_:
+    goals = list(dict.fromkeys(float(value) for value in lambda_targets))
+    if not goals:
+        return Branch(accepted, trials, False, "SUCCESS")
+    direction = np.sign(goals[0] - current.chain.lambda_)
+    if direction == 0.0:
+        goals = goals[1:]
+        if not goals:
+            return Branch(accepted, trials, False, "SUCCESS")
+        direction = np.sign(goals[0] - current.chain.lambda_)
+    if direction == 0.0 or any(
+        direction * (later - earlier) <= 0.0 for earlier, later in pairwise(goals)
+    ):
+        raise ValueError("lambda_targets must be strictly monotone from the initial state")
+    if any(not 0.0 <= goal <= 1.0 for goal in goals):
+        raise ValueError("lambda targets must lie in [0, 1]")
+
+    for goal in goals:
+        if direction * (goal - current.chain.lambda_) <= 0.0:
             continue
         target, requested, goal_scf_failures = goal, True, 0
         while True:
@@ -88,11 +105,22 @@ def continue_branch(
                     True,
                     f"REFINEMENT_STOP: {goal_scf_failures} NO_SCF_CONVERGENCE trials at lambda={goal:.12g}",
                 )
-            midpoint = 0.5 * target if current.chain.lambda_ == 0.0 else float(np.sqrt(current.chain.lambda_ * target))
-            if midpoint <= current.chain.lambda_ or target - midpoint < numerics.minimum_lambda_step:
+            midpoint = _midpoint(current.chain.lambda_, target)
+            if (
+                direction * (midpoint - current.chain.lambda_) <= 0.0
+                or abs(target - midpoint) < numerics.minimum_lambda_step
+            ):
                 return Branch(accepted, trials, True, f"MIN_STEP_REACHED: {reason}")
             target, requested = midpoint, False
     return Branch(accepted, trials, False, "SUCCESS")
+
+
+def _midpoint(current: float, target: float) -> float:
+    """Use a geometric midpoint away from zero and an arithmetic zero step."""
+
+    if current == 0.0 or target == 0.0:
+        return 0.5 * (current + target)
+    return float(np.sqrt(current * target))
 
 
 def _reason(state: HFBState, s_min: float, numerics: Numerics) -> str:
@@ -104,4 +132,11 @@ def _reason(state: HFBState, s_min: float, numerics: Numerics) -> str:
         return "NUMBER_SOLVE_FAILED: number residual exceeds branch gate"
     if s_min < numerics.minimum_branch_overlap:
         return "BRANCH_OVERLAP_FAILED"
+    diagnostics = projector_diagnostics(state.eigensystem)
+    if diagnostics["projector_idempotency"] >= numerics.projector_idempotency_tolerance:
+        return "PROJECTOR_FAILED: idempotency residual exceeds branch gate"
+    if diagnostics["biorthogonality_error"] >= numerics.biorthogonality_tolerance:
+        return "PROJECTOR_FAILED: biorthogonality residual exceeds branch gate"
+    if diagnostics["occupied_unoccupied_separation"] <= numerics.minimum_occupied_unoccupied_separation:
+        return "SPECTRAL_CLUSTER_FAILED: occupied and unoccupied clusters are unresolved"
     return "SUCCESS"

@@ -2,12 +2,65 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from time import perf_counter
 
 import numpy as np
 
 from .solver import Eigensystem, HFBState, MeanFieldSolver
+
+
+@dataclass(frozen=True)
+class FillingCurveAudit:
+    """Local fixed-sheet filling scan around one converged solution."""
+
+    states: tuple[HFBState, ...]
+    monotone: bool
+    target_crossings: int
+    minimum_branch_overlap: float
+    maximum_density_imaginary: float
+
+
+def audit_filling_curve(
+    solver: MeanFieldSolver,
+    reference: HFBState,
+    half_width: float = 0.05,
+    points: int = 5,
+) -> FillingCurveAudit:
+    """Sample ``N(mu)`` on the reference occupied sheet near a fixed point."""
+
+    if points < 3 or points % 2 == 0:
+        raise ValueError("filling audit requires an odd number of at least three points")
+    if half_width <= 0.0:
+        raise ValueError("filling audit half width must be positive")
+    mus = np.linspace(reference.mu - half_width, reference.mu + half_width, points)
+    states = tuple(
+        solver.solve_at_mu(float(mu), initial_state=reference, occupied_reference=reference.eigensystem)
+        for mu in mus
+    )
+    if not all(state.converged for state in states):
+        return FillingCurveAudit(
+            states,
+            False,
+            0,
+            min((state.branch_overlap for state in states), default=float("nan")),
+            max((state.max_density_imaginary for state in states), default=float("nan")),
+        )
+    fillings = np.array([np.mean(state.density) for state in states], dtype=float)
+    residuals = fillings - solver.chain.filling
+    monotone = bool(np.all(np.diff(fillings) >= -solver.numerics.number_tolerance))
+    tolerance = solver.numerics.number_tolerance
+    nonzero_signs = np.sign(residuals[np.abs(residuals) > tolerance])
+    crossings = int(np.count_nonzero(nonzero_signs[:-1] != nonzero_signs[1:]))
+    if not crossings and np.any(np.abs(residuals) <= tolerance):
+        crossings = 1
+    return FillingCurveAudit(
+        states,
+        monotone,
+        crossings,
+        float(min(state.branch_overlap for state in states)),
+        float(max(state.max_density_imaginary for state in states)),
+    )
 
 
 def solve_fixed_filling(
