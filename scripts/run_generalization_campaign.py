@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""Run independent generalization cases in parallel until a wall-clock deadline."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import signal
+import subprocess
+import time
+from datetime import datetime
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=Path, default=ROOT / "configs/generalization.yaml")
+    parser.add_argument("--deadline", required=True, help="Local ISO timestamp, e.g. 2026-08-31T09:45:00")
+    parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--python", default=str(ROOT / ".venv312/bin/python"))
+    args = parser.parse_args()
+    if args.workers < 1:
+        raise SystemExit("workers must be positive")
+
+    deadline = datetime.fromisoformat(args.deadline).timestamp()
+    config = yaml.safe_load(args.config.read_text(encoding="utf-8"))
+    cases = [(float(case["U"]), float(case["filling"])) for case in config["studies"]["generalization"]["cases"]]
+    log_dir = ROOT / "logs/generalization"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    state_path = log_dir / "campaign_state.json"
+    running: dict[subprocess.Popen[bytes], tuple[float, float, object, float]] = {}
+    completed: list[dict[str, object]] = []
+
+    def save_state() -> None:
+        state = {
+            "deadline": args.deadline,
+            "completed": completed,
+            "running": [
+                {"U": U, "filling": filling, "started_at": started}
+                for U, filling, _, started in running.values()
+            ],
+            "remaining": [{"U": U, "filling": filling} for U, filling in cases],
+        }
+        state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+    try:
+        while cases or running:
+            while cases and len(running) < args.workers and time.time() < deadline:
+                U, filling = cases.pop(0)
+                log_path = log_dir / f"U{U:g}_n{filling:g}.log"
+                handle = log_path.open("wb")
+                command = [
+                    args.python,
+                    str(ROOT / "scripts/run.py"),
+                    "--config", str(args.config),
+                    "--study", "generalization",
+                    "--U", str(U),
+                    "--filling", str(filling),
+                ]
+                environment = {
+                    **os.environ,
+                    "PYTHONPATH": str(ROOT / "src"),
+                    "OPENBLAS_NUM_THREADS": "1",
+                    "OMP_NUM_THREADS": "1",
+                    "MKL_NUM_THREADS": "1",
+                    "VECLIB_MAXIMUM_THREADS": "1",
+                }
+                process = subprocess.Popen(
+                    command,
+                    cwd=ROOT,
+                    env=environment,
+                    stdout=handle,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+                running[process] = (U, filling, handle, time.time())
+                print(f"[START] U={U:g} filling={filling:g} pid={process.pid}", flush=True)
+                save_state()
+
+            for process, (U, filling, handle, started) in list(running.items()):
+                return_code = process.poll()
+                if return_code is None:
+                    continue
+                handle.close()
+                completed.append({
+                    "U": U,
+                    "filling": filling,
+                    "return_code": return_code,
+                    "wall_seconds": time.time() - started,
+                })
+                del running[process]
+                print(f"[DONE] U={U:g} filling={filling:g} rc={return_code}", flush=True)
+                save_state()
+
+            if time.time() >= deadline:
+                for process, (U, filling, handle, started) in list(running.items()):
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait()
+                    handle.close()
+                    completed.append({
+                        "U": U,
+                        "filling": filling,
+                        "return_code": process.returncode,
+                        "wall_seconds": time.time() - started,
+                        "stopped_at_deadline": True,
+                    })
+                    del running[process]
+                save_state()
+                break
+            time.sleep(5)
+    finally:
+        for process, (_, _, handle, _) in running.items():
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGTERM)
+            handle.close()
+        save_state()
+
+
+if __name__ == "__main__":
+    main()

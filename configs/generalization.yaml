@@ -1,0 +1,53 @@
+common:
+  filling: 0.8
+  temperature: 0.0
+
+numerics:
+  field_tolerance: 1.0e-10
+  density_tolerance: 1.0e-10
+  density_imaginary_tolerance: 1.0e-10
+  number_tolerance: 1.0e-9
+  max_scf_iterations: 5000
+  max_mu_iterations: 42
+  mixing: 0.30
+  minimum_branch_overlap: 0.70
+  projector_idempotency_tolerance: 1.0e-8
+  biorthogonality_tolerance: 1.0e-8
+  minimum_occupied_unoccupied_separation: 1.0e-10
+  minimum_lambda_step: 1.0e-14
+  consecutive_converged_iterations: 3
+  mu_bounds: [-8.0, 8.0]
+  random_seed: 1729
+
+studies:
+  generalization:
+    cases:
+      - {U: 1.0, filling: 0.8}
+      - {U: 3.0, filling: 0.8}
+      - {U: 2.0, filling: 1.0}
+      - {U: 2.0, filling: 0.6}
+      - {U: 1.5, filling: 0.8}
+      - {U: 2.5, filling: 0.8}
+      - {U: 4.0, filling: 0.8}
+      - {U: 2.0, filling: 0.4}
+      - {U: 2.0, filling: 1.2}
+      - {U: 2.0, filling: 1.4}
+      - {U: 1.0, filling: 0.6}
+      - {U: 1.0, filling: 1.0}
+      - {U: 3.0, filling: 0.6}
+      - {U: 3.0, filling: 1.0}
+      - {U: 4.0, filling: 0.6}
+      - {U: 4.0, filling: 1.0}
+    branches:
+      # Two independent matched-gL families plus the original cross-checks.
+      - {L: 20, g: 0.10}
+      - {L: 40, g: 0.05}
+      - {L: 80, g: 0.025}
+      - {L: 24, g: 0.10}
+      - {L: 48, g: 0.05}
+      - {L: 96, g: 0.025}
+      - {L: 24, g: 0.05}
+      - {L: 40, g: 0.10}
+    coarse_lambda_points: 10
+    crossover_lambda_cap: 0.1
+    refinement_points: 3

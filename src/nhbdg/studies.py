@@ -66,8 +66,9 @@ def run(config: dict[str, Any], study: str, filters: dict[str, set[float]] | Non
         "fig3": run_fig3,
         "fig4": run_fig4,
         "branch_audit": run_branch_audit,
+        "generalization": run_generalization,
     }
-    requested = list(actions) if study == "all" else [study]
+    requested = [name for name in actions if name in config["studies"]] if study == "all" else [study]
     for name in requested:
         if name not in actions:
             raise ValueError(f"Unknown study {name!r}; choose {sorted(actions)} or 'all'.")
@@ -285,6 +286,29 @@ def run_branch_audit(config: dict[str, Any], filters: dict[str, set[float]]) -> 
                         "audit_maximum_density_imaginary": audit.maximum_density_imaginary,
                     },
                 )
+
+
+def run_generalization(config: dict[str, Any], filters: dict[str, set[float]]) -> None:
+    """Scan interaction and filling dependence of the weak-link crossover."""
+
+    numeric, section = _numerics(config), config["studies"]["generalization"]
+    for case in section["cases"]:
+        U, filling = float(case["U"]), float(case["filling"])
+        if not _selected(filters, "U", U) or not _selected(filters, "filling", filling):
+            continue
+        for item in section["branches"]:
+            L, g = int(item["L"]), float(item["g"])
+            if not _selected(filters, "L", L) or not _selected(filters, "g", g):
+                continue
+            obc = _fixed_state(Chain(L, U, g=g, filling=filling), numeric, "rescaled")
+            branch = _threshold_branch(
+                obc,
+                numeric,
+                section,
+                full_pbc=False,
+                lambda_min=float(item.get("lambda_min", 1.0e-12)),
+            )
+            _save_branch(config, "generalization", branch, seed_method="direct_obc")
 
 
 
@@ -582,7 +606,7 @@ def _numerics(config: dict[str, Any]) -> Numerics:
 def _save(config: dict[str, Any], study: str, state: HFBState, kind: str, extra: dict[str, Any] | None = None) -> Path:
     extra = extra or {}
     config_hash = _hash(config)
-    identity = {"study": study, "kind": kind, "L": state.chain.L, "U": state.chain.U, "g": state.chain.g, "lambda": state.chain.lambda_, "extra": extra}
+    identity = {"study": study, "kind": kind, "L": state.chain.L, "U": state.chain.U, "g": state.chain.g, "lambda": state.chain.lambda_, "filling": state.chain.filling, "extra": extra}
     run_id = f"{study}_{kind}_{hashlib.sha256(json.dumps(identity, sort_keys=True, default=str).encode()).hexdigest()[:12]}"
     directory = ROOT / "data" / "raw" / study / run_id
     directory.mkdir(parents=True, exist_ok=True)
