@@ -296,11 +296,24 @@ def run_generalization(config: dict[str, Any], filters: dict[str, set[float]]) -
         U, filling = float(case["U"]), float(case["filling"])
         if not _selected(filters, "U", U) or not _selected(filters, "filling", filling):
             continue
+        references: dict[int, HFBState] = {}
         for item in section["branches"]:
             L, g = int(item["L"]), float(item["g"])
             if not _selected(filters, "L", L) or not _selected(filters, "g", g):
                 continue
-            obc = _fixed_state(Chain(L, U, g=g, filling=filling), numeric, "rescaled")
+            if L not in references:
+                references[L] = _fixed_state(Chain(L, U, filling=filling), numeric, "hermitian")
+            hermitian = references[L]
+            if not hermitian.converged:
+                _save(
+                    config,
+                    "generalization",
+                    hermitian,
+                    "hermitian_seed_failed",
+                    {"target_g": g},
+                )
+                continue
+            obc = _map_obc(hermitian, g)
             branch = _threshold_branch(
                 obc,
                 numeric,
