@@ -1,0 +1,41 @@
+{
+  "raw_records": 961,
+  "cases_with_records": 9,
+  "expected_cases": 16,
+  "branches_with_records": 34,
+  "expected_branches": 128,
+  "hermitian_seed_failures": 14,
+  "collapse_by_case": {
+    "U=1,filling=0.8": {
+      "lambda_scatter": 0.0481594014543139,
+      "chi_scatter": 0.0481594014543139,
+      "chi_improves_collapse": false
+    },
+    "U=1.5,filling=0.8": {
+      "lambda_scatter": 0.8008802982956219,
+      "chi_scatter": 0.7856493961851484,
+      "chi_improves_collapse": true
+    },
+    "U=2,filling=0.6": {
+      "lambda_scatter": 0.8460414491218682,
+      "chi_scatter": 0.8460414491218682,
+      "chi_improves_collapse": false
+    },
+    "U=2,filling=1": {
+      "lambda_scatter": 0.7556018750164315,
+      "chi_scatter": 0.7556018750164315,
+      "chi_improves_collapse": false
+    },
+    "U=2,filling=1.2": {
+      "lambda_scatter": 0.7304626524990678,
+      "chi_scatter": 0.7304626524990678,
+      "chi_improves_collapse": false
+    },
+    "U=3,filling=0.8": {
+      "lambda_scatter": 0.43771471935491996,
+      "chi_scatter": 0.2780832875220434,
+      "chi_improves_collapse": true
+    }
+  },
+  "matched_gL_comparisons": 10
+}
