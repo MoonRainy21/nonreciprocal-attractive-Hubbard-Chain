@@ -23,6 +23,13 @@ def main() -> None:
     parser.add_argument("--deadline", required=True, help="Local ISO timestamp, e.g. 2026-08-31T09:45:00")
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--python", default=str(ROOT / ".venv312/bin/python"))
+    parser.add_argument(
+        "--case",
+        action="append",
+        default=[],
+        metavar="U:FILLING",
+        help="Run only this interaction/filling case; may be supplied repeatedly.",
+    )
     args = parser.parse_args()
     if args.workers < 1:
         raise SystemExit("workers must be positive")
@@ -30,6 +37,18 @@ def main() -> None:
     deadline = datetime.fromisoformat(args.deadline).timestamp()
     config = yaml.safe_load(args.config.read_text(encoding="utf-8"))
     cases = [(float(case["U"]), float(case["filling"])) for case in config["studies"]["generalization"]["cases"]]
+    if args.case:
+        selected = set()
+        for value in args.case:
+            try:
+                U_text, filling_text = value.split(":", maxsplit=1)
+                selected.add((float(U_text), float(filling_text)))
+            except ValueError as error:
+                raise SystemExit(f"invalid --case {value!r}; expected U:FILLING") from error
+        unknown = selected.difference(cases)
+        if unknown:
+            raise SystemExit(f"requested cases are absent from the config: {sorted(unknown)}")
+        cases = [case for case in cases if case in selected]
     log_dir = ROOT / "logs/generalization"
     log_dir.mkdir(parents=True, exist_ok=True)
     state_path = log_dir / "campaign_state.json"
