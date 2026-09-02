@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import signal
@@ -30,6 +31,12 @@ def main() -> None:
         metavar="U:FILLING",
         help="Run only this interaction/filling case; may be supplied repeatedly.",
     )
+    parser.add_argument(
+        "--resume-missing",
+        type=Path,
+        metavar="COVERAGE_CSV",
+        help="Run only slices with no accepted trials and no recorded Hermitian-seed failure.",
+    )
     args = parser.parse_args()
     if args.workers < 1:
         raise SystemExit("workers must be positive")
@@ -49,10 +56,25 @@ def main() -> None:
         if unknown:
             raise SystemExit(f"requested cases are absent from the config: {sorted(unknown)}")
         cases = [case for case in cases if case in selected]
+    branches = [
+        (int(branch["L"]), float(branch["g"]))
+        for branch in config["studies"]["generalization"]["branches"]
+    ]
+    jobs = [(U, filling, L, g) for U, filling in cases for L, g in branches]
+    if args.resume_missing:
+        with args.resume_missing.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        missing = {
+            (float(row["U"]), float(row["filling"]), int(row["L"]), float(row["g"]))
+            for row in rows
+            if int(row["accepted_trials"]) == 0
+            and row["hermitian_seed_failed"].strip().lower() != "true"
+        }
+        jobs = [job for job in jobs if job in missing]
     log_dir = ROOT / "logs/generalization"
     log_dir.mkdir(parents=True, exist_ok=True)
     state_path = log_dir / "campaign_state.json"
-    running: dict[subprocess.Popen[bytes], tuple[float, float, object, float]] = {}
+    running: dict[subprocess.Popen[bytes], tuple[float, float, int, float, object, float]] = {}
     completed: list[dict[str, object]] = []
 
     def save_state() -> None:
@@ -60,18 +82,21 @@ def main() -> None:
             "deadline": args.deadline,
             "completed": completed,
             "running": [
-                {"U": U, "filling": filling, "started_at": started}
-                for U, filling, _, started in running.values()
+                {"U": U, "filling": filling, "L": L, "g": g, "started_at": started}
+                for U, filling, L, g, _, started in running.values()
             ],
-            "remaining": [{"U": U, "filling": filling} for U, filling in cases],
+            "remaining": [
+                {"U": U, "filling": filling, "L": L, "g": g}
+                for U, filling, L, g in jobs
+            ],
         }
         state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
     try:
-        while cases or running:
-            while cases and len(running) < args.workers and time.time() < deadline:
-                U, filling = cases.pop(0)
-                log_path = log_dir / f"U{U:g}_n{filling:g}.log"
+        while jobs or running:
+            while jobs and len(running) < args.workers and time.time() < deadline:
+                U, filling, L, g = jobs.pop(0)
+                log_path = log_dir / f"U{U:g}_n{filling:g}_L{L}_g{g:g}.log"
                 handle = log_path.open("wb")
                 command = [
                     args.python,
@@ -80,6 +105,8 @@ def main() -> None:
                     "--study", "generalization",
                     "--U", str(U),
                     "--filling", str(filling),
+                    "--L", str(L),
+                    "--g", str(g),
                 ]
                 environment = {
                     **os.environ,
@@ -97,11 +124,11 @@ def main() -> None:
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
                 )
-                running[process] = (U, filling, handle, time.time())
-                print(f"[START] U={U:g} filling={filling:g} pid={process.pid}", flush=True)
+                running[process] = (U, filling, L, g, handle, time.time())
+                print(f"[START] U={U:g} filling={filling:g} L={L} g={g:g} pid={process.pid}", flush=True)
                 save_state()
 
-            for process, (U, filling, handle, started) in list(running.items()):
+            for process, (U, filling, L, g, handle, started) in list(running.items()):
                 return_code = process.poll()
                 if return_code is None:
                     continue
@@ -109,15 +136,17 @@ def main() -> None:
                 completed.append({
                     "U": U,
                     "filling": filling,
+                    "L": L,
+                    "g": g,
                     "return_code": return_code,
                     "wall_seconds": time.time() - started,
                 })
                 del running[process]
-                print(f"[DONE] U={U:g} filling={filling:g} rc={return_code}", flush=True)
+                print(f"[DONE] U={U:g} filling={filling:g} L={L} g={g:g} rc={return_code}", flush=True)
                 save_state()
 
             if time.time() >= deadline:
-                for process, (U, filling, handle, started) in list(running.items()):
+                for process, (U, filling, L, g, handle, started) in list(running.items()):
                     os.killpg(process.pid, signal.SIGTERM)
                     try:
                         process.wait(timeout=30)
@@ -128,6 +157,8 @@ def main() -> None:
                     completed.append({
                         "U": U,
                         "filling": filling,
+                        "L": L,
+                        "g": g,
                         "return_code": process.returncode,
                         "wall_seconds": time.time() - started,
                         "stopped_at_deadline": True,
@@ -137,7 +168,7 @@ def main() -> None:
                 break
             time.sleep(5)
     finally:
-        for process, (_, _, handle, _) in running.items():
+        for process, (_, _, _, _, handle, _) in running.items():
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGTERM)
             handle.close()
