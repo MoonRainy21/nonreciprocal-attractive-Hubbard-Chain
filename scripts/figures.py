@@ -11,7 +11,7 @@ from nhbdg.figures import make
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--figure", default="all", choices=["all", "fig02", "fig03", "fig04", "figS1", "figS2", "figS3"])
+    parser.add_argument("--figure", default="all", choices=["all", "fig02", "fig03", "fig04", "figS1", "figS2", "figS3", "figS4"])
     parser.add_argument(
         "--output-dir",
         default="figures",

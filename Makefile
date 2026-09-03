@@ -83,6 +83,7 @@ supplement: run-supplement
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/figures.py --figure figS1
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/figures.py --figure figS2
 	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/figures.py --figure figS3
+	$(THREADS) PYTHONPATH=$(PYTHONPATH) $(PYTHON) scripts/figures.py --figure figS4
 
 reproduce:
 	@$(MAKE) --no-print-directory clean-output

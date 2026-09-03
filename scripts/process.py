@@ -27,7 +27,7 @@ def main() -> None:
     processed.mkdir(parents=True, exist_ok=True)
     figure_data.mkdir(parents=True, exist_ok=True)
 
-    rows, profiles, green_rows, spectra = [], [], [], []
+    rows, profiles, green_rows, spectra, filling_rows = [], [], [], [], []
     for metadata_file in sorted((ROOT / "data" / "raw").glob("*/*/metadata.json")):
         metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
         if metadata.get("config_hash") not in source_hashes or not _within_scope(metadata, config):
@@ -62,6 +62,18 @@ def main() -> None:
         state_file = directory / "state.npz"
         if state_file.exists():
             state = np.load(state_file)
+            if row["study"] == "branch_audit" and row["kind"] == "filling_audit":
+                filling_rows.append(
+                    {
+                        "run_id": row["run_id"],
+                        "L": row["L"],
+                        "g": row["g"],
+                        "mu": row["mu"],
+                        "audit_location": row.get("audit_location", ""),
+                        "audit_index": row.get("audit_index", np.nan),
+                        "achieved_filling": float(np.mean(state["n_up"] + state["n_down"])),
+                    }
+                )
             for j, (plus, minus, up, down) in enumerate(zip(state["delta_plus"], state["delta_minus"], state["n_up"], state["n_down"])):
                 profiles.append({"run_id": row["run_id"], "study": row["study"], "kind": row["kind"], "L": row["L"], "U": row["U"], "g": row["g"], "lambda": row["lambda"], "accepted": row["accepted"], "j": j, "delta_plus_abs": abs(plus), "delta_minus_abs": abs(minus), "P_real": (plus * minus).real, "P_imag": (plus * minus).imag, "density": up + down})
             for index, value in enumerate(state["eigenvalues"]):
@@ -83,6 +95,7 @@ def main() -> None:
     pd.DataFrame(profiles).to_csv(figure_data / "profiles.csv", index=False)
     pd.DataFrame(green_rows).to_csv(figure_data / "green_frequency.csv", index=False)
     pd.DataFrame(spectra).to_csv(figure_data / "spectra.csv", index=False)
+    pd.DataFrame(filling_rows).to_csv(figure_data / "filling_audit.csv", index=False)
     # A physical branch has one canonical destination.  The full Fig. 4
     # continuation is canonical for U=2, g=0.05; Fig. 3 retains only g=0.10.
     canonical_fig3 = pd.concat([
@@ -116,7 +129,7 @@ def main() -> None:
     (figure_data / "production_status.json").write_text(json.dumps(production_status, indent=2), encoding="utf-8")
     snapshots = _fig4_snapshots(data)
     snapshots.to_csv(figure_data / "fig4_snapshots.csv", index=False)
-    manifest = {"config_hash": config_hash, "source_config_hashes": sorted(source_hashes), "figures": {"fig02_obc_covariance": ["figure_data/fig2.csv", "figure_data/profiles.csv"], "fig03_weak_link_crossover": ["figure_data/fig3.csv", "figure_data/thresholds.csv"], "fig04_pbc_endpoint": ["figure_data/fig4.csv", "figure_data/profiles.csv", "figure_data/spectra.csv", "figure_data/fig4_snapshots.csv"], "figS1_conditioning": ["figure_data/conditioning.csv"], "figS2_green_covariance": ["figure_data/green.csv", "figure_data/green_frequency.csv"], "figS3_branch_quality": ["figure_data/fig3.csv"]}, "audits": {"branch_and_filling": ["figure_data/branch_audit.csv"], "collapse_quality": ["figure_data/collapse_quality.csv"], "matched_gl_quality": ["figure_data/matched_gl_quality.csv"], "threshold_sensitivity": ["figure_data/threshold_sensitivity.csv"]}}
+    manifest = {"config_hash": config_hash, "source_config_hashes": sorted(source_hashes), "figures": {"fig02_obc_covariance": ["figure_data/fig2.csv", "figure_data/profiles.csv"], "fig03_weak_link_crossover": ["figure_data/fig3.csv", "figure_data/branch_audit.csv", "figure_data/collapse_quality.csv", "figure_data/matched_gl_quality.csv"], "fig04_pbc_endpoint": ["figure_data/fig4.csv", "figure_data/profiles.csv", "figure_data/spectra.csv", "figure_data/fig4_snapshots.csv"], "figS1_conditioning": ["figure_data/conditioning.csv"], "figS2_green_covariance": ["figure_data/green.csv", "figure_data/green_frequency.csv"], "figS3_branch_quality": ["figure_data/fig3.csv"], "figS4_projector_filling_audit": ["figure_data/branch_audit.csv", "figure_data/filling_audit.csv"]}, "audits": {"branch_and_filling": ["figure_data/branch_audit.csv"], "collapse_quality": ["figure_data/collapse_quality.csv"], "matched_gl_quality": ["figure_data/matched_gl_quality.csv"], "threshold_sensitivity": ["figure_data/threshold_sensitivity.csv"]}}
     (processed / "figure_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"[PROCESS] {len(data)} raw rows -> {processed}")
 

@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from nhbdg.figures import figure03, figure_s3
+from nhbdg.figures import figure03, figure_s3, figure_s4
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +51,14 @@ def test_not_reached_pair_threshold_is_explicit() -> None:
 def test_s3_uses_canonical_fig3_data_only() -> None:
     source = inspect.getsource(figure_s3)
     assert '"fig4.csv"' not in source
+
+
+def test_fixed_filling_audit_exports_signed_filling_curve() -> None:
+    filling = pd.read_csv(DATA / "filling_audit.csv")
+    assert "achieved_filling" in filling.columns
+    assert filling["achieved_filling"].notna().all()
+    assert set(filling["audit_location"]) == {"obc", "middle", "pbc"}
+    assert '"filling_audit.csv"' in inspect.getsource(figure_s4)
 
 
 def test_complete_status_requires_saved_paired_route_pass() -> None:

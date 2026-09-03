@@ -29,6 +29,9 @@ BRANCH_KEYS = ((24, 0.05), (24, 0.10), (40, 0.05), (40, 0.10))
 
 plt.rcParams.update(
     {
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "mathtext.fontset": "stixsans",
         "font.size": 8.0,
         "axes.labelsize": 8.0,
         "axes.titlesize": 7.8,
@@ -40,6 +43,14 @@ plt.rcParams.update(
         "ytick.major.width": 0.8,
         "xtick.minor.width": 0.7,
         "ytick.minor.width": 0.7,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "xtick.top": True,
+        "ytick.right": True,
+        "xtick.major.size": 3.4,
+        "ytick.major.size": 3.4,
+        "xtick.minor.size": 2.0,
+        "ytick.minor.size": 2.0,
         "lines.linewidth": 1.15,
         "lines.markersize": 4.3,
         "pdf.fonttype": 42,
@@ -280,13 +291,15 @@ def figure03(data: Path, output: Path) -> None:
     """Fig. 3: weak-link crossover using each physical branch only once."""
 
     branch = _accepted(_read(data / "fig3.csv"))
-    thresholds = _read(data / "thresholds.csv")
+    audit = _accepted(_read(data / "branch_audit.csv"))
+    collapse = _read(data / "collapse_quality.csv")
+    matched = _read(data / "matched_gl_quality.csv")
     figure = plt.figure(figsize=(7.0, 4.55), layout="constrained")
     grid = figure.add_gridspec(2, 2, height_ratios=(1.0, 0.72), wspace=0.17, hspace=0.14)
     lambda_axis = figure.add_subplot(grid[0, 0])
     chi_axis = figure.add_subplot(grid[0, 1])
-    threshold_axis = figure.add_subplot(grid[1, 0])
-    scale_axis = figure.add_subplot(grid[1, 1])
+    quality_axis = figure.add_subplot(grid[1, 0])
+    matched_axis = figure.add_subplot(grid[1, 1])
 
     for length, g in BRANCH_KEYS:
         source = _branch_source(branch, length, g)
@@ -314,128 +327,48 @@ def figure03(data: Path, output: Path) -> None:
         columnspacing=1.05,
     )
 
-    metric_thresholds = thresholds.loc[
-        (thresholds["study"] == "fig3")
-        & thresholds["quantity"].isin(["metric_1e-4", "metric_1e-3", "metric_1e-2"])
-        & np.isfinite(thresholds["chi_c"])
-    ].copy()
-    metric_styles = {
-        "metric_1e-4": ("o", r"$M_{\rm mc}=10^{-4}$"),
-        "metric_1e-3": ("s", r"$M_{\rm mc}=10^{-3}$"),
-        "metric_1e-2": ("^", r"$M_{\rm mc}=10^{-2}$"),
-    }
-    threshold_handles: list[Line2D] = []
-    for quantity, (marker, label) in metric_styles.items():
-        source = metric_thresholds.loc[metric_thresholds["quantity"] == quantity]
-        for _, row in source.iterrows():
-            colour, _, _ = _branch_style(int(row["L"]), float(row["g"]))
-            threshold_axis.scatter(
-                row["g"] * row["L"],
-                row["chi_c"],
-                color=colour,
-                marker=marker,
-                s=28,
-                zorder=3,
-            )
-        threshold_handles.append(Line2D([], [], color="0.18", marker=marker, linestyle="None", markerfacecolor="white", label=label))
+    order = ["lambda", "chi"]
+    quality = collapse.set_index("coordinate").reindex(order)
+    x = np.arange(2)
+    width = 0.34
+    quality_axis.bar(x - width / 2, quality["mean_log10_std"], width, color=("0.72", COLORS[0]), label="mean")
+    quality_axis.bar(x + width / 2, quality["max_log10_std"], width, color=("0.88", COLORS[2]), edgecolor="0.25", linewidth=0.55, label="maximum")
+    quality_axis.set(
+        xticks=x,
+        xticklabels=[r"$\lambda$", r"$\chi$"],
+        ylabel=r"std. dev. of $\log_{10}M_{\rm mc}$",
+        ylim=(0.0, 1.18),
+    )
+    quality_axis.legend(frameon=False, loc="upper right", ncol=2, handlelength=1.2, columnspacing=0.8)
+    quality_axis.text(0.04, 0.08, "five-branch audit", transform=quality_axis.transAxes, va="bottom", ha="left")
 
-    threshold_axis.set(
-        xlabel=r"$gL$",
-        ylabel=r"$\chi_c$",
-        yscale="log",
-        xlim=(1.05, 4.15),
-        ylim=(7.0e-3, 3.0e-1),
+    matched_spec = matched.iloc[0]
+    matched_keys = (
+        (int(matched_spec["L_first"]), float(matched_spec["g_first"]), COLORS[1], "o", "-"),
+        (int(matched_spec["L_second"]), float(matched_spec["g_second"]), COLORS[2], "^", "--"),
     )
-    threshold_axis.set_xticks([1.2, 2.0, 2.4, 4.0])
-    threshold_axis.grid(axis="y", which="major", color="0.90", lw=0.55)
-    threshold_axis.legend(
-        handles=threshold_handles,
-        loc="upper center",
-        ncol=3,
-        frameon=False,
-        handletextpad=0.25,
-        columnspacing=0.55,
-        labelspacing=0.15,
-        fontsize=6.9,
+    for length, g, colour, marker, linestyle in matched_keys:
+        source = _unique_lambda(audit.loc[(audit["L"] == length) & np.isclose(audit["g"], g) & (audit["chi"] > 0.0)])
+        matched_axis.loglog(
+            source["chi"], source["metric_violation"], color=colour, marker=marker,
+            linestyle=linestyle, markevery=_sparse_every(len(source), 9), markerfacecolor="white",
+            markeredgewidth=0.85, label=rf"$L={length},\ g={g:.2f}$",
+        )
+    matched_axis.set(xlabel=r"$\chi=\lambda e^{gL}$", ylabel=r"$M_{\rm mc}$", ylim=(1.0e-11, 1.25))
+    matched_axis.legend(frameon=False, loc="upper left", handlelength=1.6)
+    matched_annotation = (
+        rf"$gL={float(matched_spec['gL']):.1f}$" + "\n"
+        + rf"mean $|\Delta\log_{{10}}M|={float(matched_spec['mean_abs_log10_difference']):.2f}$"
     )
-
-    comparison = thresholds.loc[
-        (thresholds["study"] == "fig3")
-        & np.isclose(thresholds["g"], 0.05)
-        & thresholds["quantity"].isin(["metric_1e-2", "pair"])
-    ].copy()
-    x_locations = {24: 0.0, 40: 1.0}
-    comparison_handles = [
-        Line2D([], [], color="0.20", marker="o", linestyle="None", label=r"$M_{\rm mc}=10^{-2}$"),
-        Line2D([], [], color="0.20", marker="s", linestyle="None", markerfacecolor="white", label=r"$\delta P_{\rm bulk}=10^{-2}$"),
-    ]
-    for length in (24, 40):
-        colour, _, _ = _branch_style(length, 0.05)
-        metric = comparison.loc[(comparison["L"] == length) & (comparison["quantity"] == "metric_1e-2")]
-        pair = comparison.loc[(comparison["L"] == length) & (comparison["quantity"] == "pair")]
-        metric_x = x_locations[length] - 0.11
-        pair_x = x_locations[length] + 0.11
-        if not metric.empty and np.isfinite(metric["chi_c"].iloc[0]):
-            scale_axis.scatter(metric_x, metric["chi_c"].iloc[0], color=colour, marker="o", s=32, zorder=3)
-        if not pair.empty and np.isfinite(pair["chi_c"].iloc[0]):
-            scale_axis.scatter(
-                pair_x,
-                pair["chi_c"].iloc[0],
-                color=colour,
-                marker="s",
-                facecolors="white",
-                linewidths=1.0,
-                s=34,
-                zorder=4,
-            )
-        elif not pair.empty:
-            endpoint = float(pair["max_chi"].iloc[0])
-            scale_axis.scatter(
-                pair_x,
-                endpoint,
-                color=colour,
-                marker="^",
-                facecolors="white",
-                linewidths=1.0,
-                s=38,
-                zorder=4,
-            )
-            scale_axis.annotate(
-                "",
-                xy=(pair_x, endpoint * 1.40),
-                xytext=(pair_x, endpoint * 1.03),
-                arrowprops={"arrowstyle": "-|>", "color": colour, "lw": 0.8},
-            )
-            scale_axis.text(
-                pair_x - 0.06,
-                endpoint * 0.67,
-                "not reached\nby PBC",
-                fontsize=7.0,
-                ha="right",
-                va="top",
-            )
-    scale_axis.set(
-        xticks=[0.0, 1.0],
-        xticklabels=[r"$L=24$", r"$L=40$"],
-        ylabel=r"crossover scale $\chi_x$",
-        yscale="log",
-        xlim=(-0.42, 1.42),
-        ylim=(6.0e-2, 1.5e1),
-    )
-    scale_axis.set_title(r"$g=0.05$", loc="left", pad=2.0, fontsize=7.8)
-    scale_axis.grid(axis="y", which="major", color="0.90", lw=0.55)
-    scale_axis.legend(
-        handles=comparison_handles,
-        loc="upper left",
-        frameon=False,
-        handletextpad=0.35,
-        labelspacing=0.2,
+    matched_axis.text(
+        0.98, 0.06, matched_annotation,
+        transform=matched_axis.transAxes, ha="right", va="bottom", fontsize=7.1,
     )
 
     _panel_label(lambda_axis, "(a)", x=-0.15)
     _panel_label(chi_axis, "(b)", x=-0.15)
-    _panel_label(threshold_axis, "(c)", x=-0.15)
-    _panel_label(scale_axis, "(d)", x=-0.15)
+    _panel_label(quality_axis, "(c)", x=-0.15)
+    _panel_label(matched_axis, "(d)", x=-0.15)
     _save(figure, output, "fig03_weak_link_crossover")
 
 
@@ -810,6 +743,94 @@ def figure_s3(data: Path, output: Path) -> None:
     )
 
 
+def figure_s4(data: Path, output: Path) -> None:
+    """Supplementary Fig. S4: fixed-filling and projector audit."""
+
+    audit = _read(data / "branch_audit.csv")
+    forward = _accepted(audit)
+    figure, axes = plt.subplots(2, 2, figsize=(7.0, 4.55), layout="constrained")
+    filling_axis, separation_axis, algebra_axis, reverse_axis = axes.ravel()
+
+    filling_data = _read(data / "filling_audit.csv")
+    filling = filling_data.loc[
+        (filling_data["L"] == 40) & np.isclose(filling_data["g"], 0.05)
+    ].copy()
+    filling_styles = {
+        "obc": (COLORS[0], "o", "OBC"),
+        "middle": (COLORS[1], "s", "crossover"),
+        "pbc": (COLORS[2], "^", "PBC"),
+    }
+    for location, (colour, marker, label) in filling_styles.items():
+        source = filling.loc[filling["audit_location"] == location].sort_values("mu")
+        filling_axis.plot(
+            source["mu"], source["achieved_filling"], color=colour, marker=marker,
+            markerfacecolor="white", markeredgewidth=0.85, label=label,
+        )
+    filling_axis.axhline(0.8, color="0.35", linestyle=":", lw=0.9)
+    filling_axis.set(xlabel=r"$\mu/t$", ylabel=r"$N(\mu)/L$")
+    filling_axis.legend(frameon=False, loc="upper left", ncol=3, handlelength=1.4, columnspacing=0.8)
+
+    audit_keys = ((20, 0.10), (24, 0.05), (24, 0.10), (40, 0.05), (40, 0.10))
+    audit_colours = ("#6A3D9A", *COLORS)
+    for (length, g), colour, marker, linestyle in zip(audit_keys, audit_colours, ("v", "o", "s", "^", "D"), ("-", "--", "-.", ":", "-")):
+        source = _unique_lambda(forward.loc[(forward["L"] == length) & np.isclose(forward["g"], g) & (forward["lambda"] > 0.0)])
+        separation_axis.semilogx(
+            source["lambda"], source["real_line_gap"], color=colour, marker=marker,
+            linestyle=linestyle, markevery=_sparse_every(len(source), 8), markerfacecolor="white",
+            markeredgewidth=0.8, label=rf"$L={length},\ g={g:.2f}$",
+        )
+    separation_axis.set(xlabel=r"$\lambda$", ylabel=r"real line gap $\Delta_{\mathrm{R}}/t$", ylim=(0.33, 0.43))
+    separation_axis.legend(frameon=False, loc="lower left", ncol=2, handlelength=1.55, columnspacing=0.7, fontsize=6.7)
+
+    representative = _unique_lambda(
+        forward.loc[(forward["L"] == 40) & np.isclose(forward["g"], 0.05) & (forward["lambda"] > 0.0)]
+    )
+    for column, colour, marker, label in (
+        ("projector_idempotency", COLORS[0], "o", r"$\|C^2-C\|/\|C\|$"),
+        ("biorthogonality_error", COLORS[1], "s", r"$\|L^\dagger R-I\|/\|I\|$"),
+        ("projector_trace_error", COLORS[2], "^", r"$|\operatorname{Tr}C-L|$"),
+    ):
+        source = representative.copy()
+        display_values = np.maximum(source[column].to_numpy(float), 1.0e-16)
+        algebra_axis.loglog(
+            source["lambda"], display_values, color=colour, marker=marker,
+            markerfacecolor="white", markeredgewidth=0.8, markevery=_sparse_every(len(source), 8), label=label,
+        )
+    algebra_axis.axhline(1.0e-8, color="0.35", linestyle=":", lw=0.9, label="acceptance bound")
+    algebra_axis.set(xlabel=r"$\lambda$", ylabel="projector residual", ylim=(5.0e-17, 3.0e-7))
+    algebra_axis.legend(frameon=False, loc="center left", handlelength=1.45, fontsize=6.8)
+    algebra_axis.text(0.98, 0.05, r"values $<10^{-16}$ shown at floor", transform=algebra_axis.transAxes, ha="right", va="bottom", fontsize=6.6)
+
+    returned = audit.loc[audit["kind"] == "reverse_obc_endpoint"].sort_values(["L", "g"])
+    labels = [rf"${int(row.L)},{float(row.g):.2f}$" for row in returned.itertuples()]
+    positions = np.arange(len(returned), dtype=float)
+    offsets = (-0.24, -0.08, 0.08, 0.24)
+    error_columns = (
+        ("projector_error_to_endpoint", COLORS[0], "o", "projector"),
+        ("density_error_to_endpoint", COLORS[1], "s", "density"),
+        ("pair_product_error_to_endpoint", COLORS[2], "^", "pair product"),
+        ("spectrum_error_to_endpoint", COLORS[3], "D", "spectrum"),
+    )
+    for offset, (column, colour, marker, label) in zip(offsets, error_columns):
+        reverse_axis.semilogy(
+            positions + offset, returned[column], linestyle="None", marker=marker, color=colour,
+            markerfacecolor="white", markeredgewidth=0.9, label=label,
+        )
+    reverse_axis.axhline(1.0e-7, color="0.35", linestyle=":", lw=0.9)
+    reverse_axis.set(
+        xticks=positions,
+        xticklabels=labels,
+        xlabel=r"$(L,g)$",
+        ylabel=r"PBC$\to$OBC return error",
+        ylim=(1.0e-10, 3.0e-7),
+    )
+    reverse_axis.legend(frameon=False, loc="upper right", ncol=2, handletextpad=0.25, columnspacing=0.7, fontsize=6.8)
+
+    for axis, label in zip(axes.ravel(), ("(a)", "(b)", "(c)", "(d)")):
+        _panel_label(axis, label, x=-0.15)
+    _save(figure, output, "figS4_projector_filling_audit")
+
+
 def make(data: Path, output: Path, selected: str = "all") -> None:
     """Render one selected figure or the complete publication figure set."""
 
@@ -820,6 +841,7 @@ def make(data: Path, output: Path, selected: str = "all") -> None:
         "figS1": figure_s1,
         "figS2": figure_s2,
         "figS3": figure_s3,
+        "figS4": figure_s4,
     }
     for name, function in functions.items():
         if selected in {"all", name}:

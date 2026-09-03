@@ -10,7 +10,9 @@
     ],
     "fig03_weak_link_crossover": [
       "figure_data/fig3.csv",
-      "figure_data/thresholds.csv"
+      "figure_data/branch_audit.csv",
+      "figure_data/collapse_quality.csv",
+      "figure_data/matched_gl_quality.csv"
     ],
     "fig04_pbc_endpoint": [
       "figure_data/fig4.csv",
@@ -27,6 +29,10 @@
     ],
     "figS3_branch_quality": [
       "figure_data/fig3.csv"
+    ],
+    "figS4_projector_filling_audit": [
+      "figure_data/branch_audit.csv",
+      "figure_data/filling_audit.csv"
     ]
   },
   "audits": {
