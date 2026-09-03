@@ -344,7 +344,7 @@ def figure03(data: Path, output: Path) -> None:
         ylim=(0.0, 1.18),
     )
     quality_axis.legend(frameon=False, loc="upper right", ncol=2, handlelength=1.2, columnspacing=0.8)
-    quality_axis.text(0.04, 0.08, "five-branch audit", transform=quality_axis.transAxes, va="bottom", ha="left")
+    quality_axis.set_title("five-branch audit", loc="left", pad=3.0)
 
     matched_spec = matched.iloc[0]
     matched_keys = (
@@ -793,7 +793,11 @@ def figure_s4(data: Path, output: Path) -> None:
         xlabel=r"$\lambda$", ylabel=r"real line gap $\Delta_{\mathrm{R}}/t$",
         xlim=(1.0e-4, 1.05), ylim=(0.345, 0.395),
     )
-    separation_axis.legend(frameon=False, loc="lower left", ncol=2, handlelength=1.55, columnspacing=0.7, fontsize=6.7)
+    separation_axis.legend(
+        frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.015), ncol=3,
+        handlelength=1.45, handletextpad=0.3, columnspacing=0.65, fontsize=6.35,
+        borderaxespad=0.0,
+    )
 
     representative = _unique_lambda(
         forward.loc[(forward["L"] == 40) & np.isclose(forward["g"], 0.05) & (forward["lambda"] > 0.0)]
@@ -812,7 +816,10 @@ def figure_s4(data: Path, output: Path) -> None:
     algebra_axis.axhline(1.0e-8, color="0.35", linestyle=":", lw=0.9, label="acceptance bound")
     algebra_axis.set(xlabel=r"$\lambda$", ylabel="projector residual", ylim=(5.0e-17, 3.0e-7))
     algebra_axis.legend(frameon=False, loc="center left", handlelength=1.45, fontsize=6.8)
-    algebra_axis.text(0.98, 0.05, r"values $<10^{-16}$ shown at floor", transform=algebra_axis.transAxes, ha="right", va="bottom", fontsize=6.6)
+    algebra_axis.text(
+        0.98, 0.94, r"values $<10^{-16}$ shown at floor",
+        transform=algebra_axis.transAxes, ha="right", va="top", fontsize=6.6,
+    )
 
     returned = audit.loc[audit["kind"] == "reverse_obc_endpoint"].sort_values(["L", "g"])
     labels = [rf"${int(row.L)},{float(row.g):.2f}$" for row in returned.itertuples()]
@@ -844,7 +851,11 @@ def figure_s4(data: Path, output: Path) -> None:
         ylim=(1.0e-10, 3.0e-7),
     )
     reverse_axis.grid(axis="y", which="major", color="0.90", lw=0.5, zorder=0)
-    reverse_axis.legend(frameon=False, loc="upper right", ncol=2, handletextpad=0.25, columnspacing=0.7, fontsize=6.8)
+    reverse_axis.legend(
+        frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.015), ncol=4,
+        handlelength=1.35, handletextpad=0.25, columnspacing=0.55, fontsize=6.35,
+        borderaxespad=0.0,
+    )
 
     for axis, label in zip(axes.ravel(), ("(a)", "(b)", "(c)", "(d)")):
         _panel_label(axis, label, x=-0.15)
