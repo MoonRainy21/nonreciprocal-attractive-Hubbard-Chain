@@ -310,13 +310,17 @@ def figure03(data: Path, output: Path) -> None:
             axis.loglog(
                 source[x_column], source["metric_violation"], color=colour, linestyle=linestyle,
                 marker=marker, markevery=_sparse_every(len(source), 10), markerfacecolor="white",
-                markeredgewidth=0.85, ms=3.9,
+                markeredgewidth=0.95, ms=4.4, lw=1.45,
             )
     lambda_axis.set(xlabel=r"$\lambda$", ylabel=r"$M_{\rm mc}$")
     chi_axis.set(xlabel=r"$\chi=\lambda e^{gL}$", ylabel=r"$M_{\rm mc}$")
     for axis in (lambda_axis, chi_axis):
-        axis.set_ylim(1.0e-11, 1.25)
+        axis.set_ylim(1.0e-8, 1.05)
         axis.grid(which="major", color="0.90", lw=0.55)
+        axis.axhspan(1.0e-4, 1.0e-1, color="0.92", zorder=-3)
+    lambda_axis.set_xlim(1.0e-6, 1.05)
+    chi_axis.set_xlim(1.0e-5, 10.0)
+    lambda_axis.text(0.04, 0.94, "crossover window", transform=lambda_axis.transAxes, va="top", fontsize=6.8, color="0.35")
     figure.legend(
         handles=_branch_handles(),
         loc="outside upper center",
@@ -352,10 +356,15 @@ def figure03(data: Path, output: Path) -> None:
         matched_axis.loglog(
             source["chi"], source["metric_violation"], color=colour, marker=marker,
             linestyle=linestyle, markevery=_sparse_every(len(source), 9), markerfacecolor="white",
-            markeredgewidth=0.85, label=rf"$L={length},\ g={g:.2f}$",
+            markeredgewidth=0.95, ms=4.4, lw=1.45, label=rf"$L={length},\ g={g:.2f}$",
         )
-    matched_axis.set(xlabel=r"$\chi=\lambda e^{gL}$", ylabel=r"$M_{\rm mc}$", ylim=(1.0e-11, 1.25))
+    matched_axis.axhspan(1.0e-4, 1.0e-1, color="0.92", zorder=-3)
+    matched_axis.set(
+        xlabel=r"$\chi=\lambda e^{gL}$", ylabel=r"$M_{\rm mc}$",
+        xlim=(1.0e-5, 1.0), ylim=(1.0e-8, 1.05),
+    )
     matched_axis.legend(frameon=False, loc="upper left", handlelength=1.6)
+    matched_axis.grid(which="major", color="0.90", lw=0.55)
     matched_annotation = (
         rf"$gL={float(matched_spec['gL']):.1f}$" + "\n"
         + rf"mean $|\Delta\log_{{10}}M|={float(matched_spec['mean_abs_log10_difference']):.2f}$"
@@ -756,18 +765,19 @@ def figure_s4(data: Path, output: Path) -> None:
         (filling_data["L"] == 40) & np.isclose(filling_data["g"], 0.05)
     ].copy()
     filling_styles = {
-        "obc": (COLORS[0], "o", "OBC"),
-        "middle": (COLORS[1], "s", "crossover"),
-        "pbc": (COLORS[2], "^", "PBC"),
+        "obc": (COLORS[0], "o", "-", "OBC"),
+        "middle": (COLORS[1], "s", "--", "crossover"),
+        "pbc": (COLORS[2], "^", "-.", "PBC"),
     }
-    for location, (colour, marker, label) in filling_styles.items():
+    for location, (colour, marker, linestyle, label) in filling_styles.items():
         source = filling.loc[filling["audit_location"] == location].sort_values("mu")
         filling_axis.plot(
-            source["mu"], source["achieved_filling"], color=colour, marker=marker,
-            markerfacecolor="white", markeredgewidth=0.85, label=label,
+            source["mu"], source["achieved_filling"] - 0.8, color=colour, marker=marker,
+            linestyle=linestyle, lw=1.4, markerfacecolor="white", markeredgewidth=0.9,
+            label=label,
         )
-    filling_axis.axhline(0.8, color="0.35", linestyle=":", lw=0.9)
-    filling_axis.set(xlabel=r"$\mu/t$", ylabel=r"$N(\mu)/L$")
+    filling_axis.axhline(0.0, color="0.35", linestyle=":", lw=0.9)
+    filling_axis.set(xlabel=r"$\mu/t$", ylabel=r"$N(\mu)/L-n_{\rm target}$")
     filling_axis.legend(frameon=False, loc="upper left", ncol=3, handlelength=1.4, columnspacing=0.8)
 
     audit_keys = ((20, 0.10), (24, 0.05), (24, 0.10), (40, 0.05), (40, 0.10))
@@ -777,9 +787,12 @@ def figure_s4(data: Path, output: Path) -> None:
         separation_axis.semilogx(
             source["lambda"], source["real_line_gap"], color=colour, marker=marker,
             linestyle=linestyle, markevery=_sparse_every(len(source), 8), markerfacecolor="white",
-            markeredgewidth=0.8, label=rf"$L={length},\ g={g:.2f}$",
+            markeredgewidth=0.9, ms=4.2, lw=1.35, label=rf"$L={length},\ g={g:.2f}$",
         )
-    separation_axis.set(xlabel=r"$\lambda$", ylabel=r"real line gap $\Delta_{\mathrm{R}}/t$", ylim=(0.33, 0.43))
+    separation_axis.set(
+        xlabel=r"$\lambda$", ylabel=r"real line gap $\Delta_{\mathrm{R}}/t$",
+        xlim=(1.0e-4, 1.05), ylim=(0.345, 0.395),
+    )
     separation_axis.legend(frameon=False, loc="lower left", ncol=2, handlelength=1.55, columnspacing=0.7, fontsize=6.7)
 
     representative = _unique_lambda(
@@ -804,18 +817,24 @@ def figure_s4(data: Path, output: Path) -> None:
     returned = audit.loc[audit["kind"] == "reverse_obc_endpoint"].sort_values(["L", "g"])
     labels = [rf"${int(row.L)},{float(row.g):.2f}$" for row in returned.itertuples()]
     positions = np.arange(len(returned), dtype=float)
-    offsets = (-0.24, -0.08, 0.08, 0.24)
+    offsets = (-1.5, -0.5, 0.5, 1.5)
+    bar_width = 0.18
+    plotting_floor = 1.0e-10
     error_columns = (
         ("projector_error_to_endpoint", COLORS[0], "o", "projector"),
         ("density_error_to_endpoint", COLORS[1], "s", "density"),
         ("pair_product_error_to_endpoint", COLORS[2], "^", "pair product"),
         ("spectrum_error_to_endpoint", COLORS[3], "D", "spectrum"),
     )
-    for offset, (column, colour, marker, label) in zip(offsets, error_columns):
-        reverse_axis.semilogy(
-            positions + offset, returned[column], linestyle="None", marker=marker, color=colour,
-            markerfacecolor="white", markeredgewidth=0.9, label=label,
+    hatches = ("", "//", "xx", "..")
+    for offset, (column, colour, _marker, label), hatch in zip(offsets, error_columns, hatches):
+        values = np.maximum(returned[column].to_numpy(float), plotting_floor)
+        reverse_axis.bar(
+            positions + offset * bar_width, values - plotting_floor, width=bar_width,
+            bottom=plotting_floor, color=colour, edgecolor="0.18", linewidth=0.55,
+            hatch=hatch, label=label, zorder=2,
         )
+    reverse_axis.set_yscale("log")
     reverse_axis.axhline(1.0e-7, color="0.35", linestyle=":", lw=0.9)
     reverse_axis.set(
         xticks=positions,
@@ -824,6 +843,7 @@ def figure_s4(data: Path, output: Path) -> None:
         ylabel=r"PBC$\to$OBC return error",
         ylim=(1.0e-10, 3.0e-7),
     )
+    reverse_axis.grid(axis="y", which="major", color="0.90", lw=0.5, zorder=0)
     reverse_axis.legend(frameon=False, loc="upper right", ncol=2, handletextpad=0.25, columnspacing=0.7, fontsize=6.8)
 
     for axis, label in zip(axes.ravel(), ("(a)", "(b)", "(c)", "(d)")):
