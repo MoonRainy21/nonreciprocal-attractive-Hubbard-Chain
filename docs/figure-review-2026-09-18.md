@@ -25,6 +25,21 @@ collapse statistics. The Fig. 4 profile text now agrees with the stored snapshot
 coordinates, chi = 0.05318 and 0.14266 (previous text: 0.032 and 0.087).
 No numerical data or solver results were changed.
 
+## Color refinement
+
+All nine numerical exports use a shared subset of Paul Tol's bright palette:
+blue `#4477AA`, red `#EE6677`, green `#228833`, and purple `#AA3377`.
+These are a design choice, not prescribed PRE colors. APS guidance requires
+figures to remain intelligible in both color and grayscale:
+https://journals.aps.org/authors/guide-acceptable-color-online-figures-h24
+Neutral gray and hatching distinguish reference bars. The extra L=20 branch
+uses charcoal in both Fig. 3 and S4; PBC uses purple in both Fig. 4 and S4.
+S2 directional curves now also carry q-specific markers so direction dashes
+and q labels remain separable without color. Figure 1 remains neutral.
+All nine regenerated PDFs were rendered and visually reviewed; Fig. 3 and
+Fig. 4 were additionally rendered in grayscale. Main and Supplement rebuilt
+successfully. Data, axis limits, and numerical results were unchanged.
+
 ## Verification
 
 - Regenerated all nine numerical figure exports.

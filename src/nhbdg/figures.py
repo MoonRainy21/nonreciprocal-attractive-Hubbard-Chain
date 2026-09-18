@@ -21,9 +21,10 @@ import numpy as np
 import pandas as pd
 
 
-# Colour-blind-safe colours, with a marker and a line style in addition to
-# colour whenever curves represent different physical branches.
-COLORS = ("#0072B2", "#D55E00", "#009E73", "#CC79A7")
+# Selected Paul Tol bright colours. This is our publication palette, not an
+# APS-mandated palette. Redundant markers/dashes preserve meaning in grayscale.
+COLORS = ("#4477AA", "#EE6677", "#228833", "#AA3377")
+EXTRA_BRANCH_COLOR = "#333333"
 MARKERS = ("o", "s", "^", "D")
 LINESTYLES = ("-", "--", "-.", ":")
 BRANCH_KEYS = ((24, 0.05), (24, 0.10), (40, 0.05), (40, 0.10))
@@ -60,6 +61,7 @@ plt.rcParams.update(
         "savefig.dpi": 600,
         "savefig.facecolor": "white",
         "axes.axisbelow": True,
+        "axes.prop_cycle": plt.cycler(color=COLORS),
         "figure.constrained_layout.h_pad": 0.09,
         "figure.constrained_layout.w_pad": 0.06,
     }
@@ -372,7 +374,7 @@ def figure03(data: Path, output: Path) -> None:
 
     matched_spec = matched.iloc[0]
     matched_keys = (
-        (int(matched_spec["L_first"]), float(matched_spec["g_first"]), COLORS[1], "o", "-"),
+        (int(matched_spec["L_first"]), float(matched_spec["g_first"]), EXTRA_BRANCH_COLOR, "v", "-"),
         (int(matched_spec["L_second"]), float(matched_spec["g_second"]), COLORS[2], "^", "--"),
     )
     for length, g, colour, marker, linestyle in matched_keys:
@@ -624,8 +626,10 @@ def figure_s2(data: Path, output: Path) -> None:
             marker=MARKERS[index], markevery=(marker_start, marker_every), markerfacecolor="white",
             markeredgewidth=0.8, ms=3.4,
         )
-        directional_axis.semilogy(source["omega"], source["G_1L_abs"], color=colour, linestyle="-", lw=1.15)
-        directional_axis.semilogy(source["omega"], source["G_L1_abs"], color=colour, linestyle="--", lw=1.15)
+        direction_markers = dict(marker=MARKERS[index], markevery=(marker_start, marker_every),
+                                 markerfacecolor="white", markeredgewidth=0.8, ms=3.4)
+        directional_axis.semilogy(source["omega"], source["G_1L_abs"], color=colour, linestyle="-", lw=1.15, **direction_markers)
+        directional_axis.semilogy(source["omega"], source["G_L1_abs"], color=colour, linestyle="--", lw=1.15, **direction_markers)
         stripped_axis.semilogy(
             source["omega"], source["stripped_1L_abs"], color=colour, linestyle="-", lw=1.15,
             marker=MARKERS[index], markevery=(marker_start, marker_every), markerfacecolor="white",
@@ -802,7 +806,7 @@ def figure_s4(data: Path, output: Path) -> None:
     filling_styles = {
         "obc": (COLORS[0], "o", "-", "OBC"),
         "middle": (COLORS[1], "s", "--", "crossover"),
-        "pbc": (COLORS[2], "^", "-.", "PBC"),
+        "pbc": (COLORS[3], "D", ":", "PBC"),
     }
     for location, (colour, marker, linestyle, label) in filling_styles.items():
         source = filling.loc[filling["audit_location"] == location].sort_values("mu")
@@ -816,7 +820,7 @@ def figure_s4(data: Path, output: Path) -> None:
     _legend_above(filling_axis, ncol=3)
 
     audit_keys = ((20, 0.10), (24, 0.05), (24, 0.10), (40, 0.05), (40, 0.10))
-    audit_colours = ("#6A3D9A", *COLORS)
+    audit_colours = (EXTRA_BRANCH_COLOR, *COLORS)
     for (length, g), colour, marker, linestyle in zip(audit_keys, audit_colours, ("v", "o", "s", "^", "D"), ("-", "--", "-.", ":", "-")):
         source = _unique_lambda(forward.loc[(forward["L"] == length) & np.isclose(forward["g"], g) & (forward["lambda"] > 0.0)])
         separation_axis.semilogx(
