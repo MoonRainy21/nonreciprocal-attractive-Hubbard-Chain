@@ -15,6 +15,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 from matplotlib.ticker import LogLocator, NullFormatter
 import numpy as np
 import pandas as pd
@@ -318,7 +319,7 @@ def figure03(data: Path, output: Path) -> None:
     collapse = _read(data / "collapse_quality.csv")
     matched = _read(data / "matched_gl_quality.csv")
     figure = plt.figure(figsize=(7.0, 4.8), layout="constrained")
-    grid = figure.add_gridspec(2, 2, height_ratios=(1.0, 0.72), wspace=0.17, hspace=0.14)
+    grid = figure.add_gridspec(2, 2, height_ratios=(1.0, 0.90), wspace=0.12, hspace=0.14)
     lambda_axis = figure.add_subplot(grid[0, 0])
     chi_axis = figure.add_subplot(grid[0, 1])
     quality_axis = figure.add_subplot(grid[1, 0])
@@ -338,12 +339,11 @@ def figure03(data: Path, output: Path) -> None:
     lambda_axis.set(xlabel=r"$\lambda$", ylabel=r"$M_{\rm mc}$")
     chi_axis.set(xlabel=r"$\chi=\lambda e^{gL}$", ylabel=r"$M_{\rm mc}$")
     for axis in (lambda_axis, chi_axis):
-        axis.set_ylim(1.0e-8, 1.05)
+        axis.set_ylim(1.0e-5, 1.05)
         axis.grid(which="major", color="0.90", lw=0.55)
         axis.axhspan(1.0e-4, 1.0e-1, color="0.92", zorder=-3)
-    lambda_axis.set_xlim(1.0e-6, 1.05)
-    chi_axis.set_xlim(1.0e-5, 10.0)
-    lambda_axis.text(0.04, 0.94, "crossover window", transform=lambda_axis.transAxes, va="top", fontsize=6.8, color="0.35")
+    lambda_axis.set_xlim(1.0e-4, 1.05)
+    chi_axis.set_xlim(1.0e-3, 10.0)
     figure.legend(
         handles=_branch_handles(),
         loc="outside upper center",
@@ -357,14 +357,16 @@ def figure03(data: Path, output: Path) -> None:
     order = ["lambda", "chi"]
     quality = collapse.set_index("coordinate").reindex(order)
     x = np.arange(2)
-    width = 0.34
-    quality_axis.bar(x - width / 2, quality["mean_log10_std"], width, color=COLORS[0], edgecolor="0.25", linewidth=0.55, label="mean")
-    quality_axis.bar(x + width / 2, quality["max_log10_std"], width, color="0.85", hatch="//", edgecolor="0.25", linewidth=0.55, label="maximum")
+    width = 0.27
+    mean_bars = quality_axis.bar(x - width / 2, quality["mean_log10_std"], width, color=COLORS[0], edgecolor="0.25", linewidth=0.55, label="mean")
+    max_bars = quality_axis.bar(x + width / 2, quality["max_log10_std"], width, color="0.85", hatch="//", edgecolor="0.25", linewidth=0.55, label="maximum")
+    quality_axis.bar_label(mean_bars, fmt="%.3f", padding=4, fontsize=7.5)
+    quality_axis.bar_label(max_bars, fmt="%.3f", padding=4, fontsize=7.5)
     quality_axis.set(
         xticks=x,
         xticklabels=[r"$\lambda$", r"$\chi$"],
         ylabel=r"std. dev. of $\log_{10}M_{\rm mc}$",
-        ylim=(0.0, 1.18),
+        ylim=(0.0, 1.25),
     )
     _legend_above(quality_axis)
 
@@ -423,11 +425,11 @@ def figure04(data: Path, output: Path) -> None:
     profile_axis = figure.add_subplot(outer[0, 1])
     spectrum_grid = outer[1, 0].subgridspec(1, 3, wspace=0.08)
     spectrum_axes = [figure.add_subplot(spectrum_grid[0, index]) for index in range(3)]
-    control_grid = outer[1, 1].subgridspec(2, 2, height_ratios=(0.16, 1.0), wspace=0.12, hspace=0.02)
-    control_header = figure.add_subplot(control_grid[0, :])
+    control_grid = outer[1, 1].subgridspec(3, 1, height_ratios=(0.16, 1.0, 1.0), hspace=0.12)
+    control_header = figure.add_subplot(control_grid[0, 0])
     control_header.set_axis_off()
     pair_control_axis = figure.add_subplot(control_grid[1, 0])
-    gamma_control_axis = figure.add_subplot(control_grid[1, 1])
+    gamma_control_axis = figure.add_subplot(control_grid[2, 0])
 
     trajectory = _unique_lambda(branch.loc[(branch["L"] == 40) & np.isclose(branch["g"], 0.05) & (branch["chi"] > 0.0)])
     diagnostics = (
@@ -517,27 +519,32 @@ def figure04(data: Path, output: Path) -> None:
         endpoint_gamma.append(float(endpoint["gamma_max_over_t"].iloc[0]) if not endpoint.empty else np.nan)
         control_gamma.append(float(control["gamma_max_over_t"].iloc[0]) if not control.empty else np.nan)
     control_handles = [
-        Line2D([], [], color=COLORS[0], marker="o", linestyle="None", markerfacecolor="white", label="NH PBC"),
-        Line2D([], [], color="0.35", marker="s", linestyle="None", markerfacecolor="white", label="bandwidth-matched Hermitian"),
+        Patch(facecolor=COLORS[0], edgecolor="0.25", label="NH PBC"),
+        Patch(facecolor="0.90", edgecolor="0.25", hatch="///", label="matched Hermitian"),
     ]
-    category_offset = 0.05
+    category_offset = 0.17
     for axis, nh_values, hermitian_values, ylabel in (
         (pair_control_axis, endpoint_pairs, control_pairs, r"$P_{\rm bulk}/t^2$"),
         (gamma_control_axis, endpoint_gamma, control_gamma, r"$\Gamma_{\max}/t$"),
     ):
-        axis.scatter(locations - category_offset, nh_values, color=COLORS[0], marker="o", facecolors="white", linewidths=1.0, s=27, zorder=3)
-        axis.scatter(locations + category_offset, hermitian_values, color="0.35", marker="s", facecolors="white", linewidths=1.0, s=27, zorder=3)
-        axis.set(xticks=locations, xticklabels=[r"$L=24$", r"$L=40$"], ylabel=ylabel, xlim=(-0.25, 1.25))
-        axis.tick_params(axis="x", pad=1.5)
-        axis.yaxis.labelpad = 2.0
-    pair_control_axis.set_ylim(0.0, 0.135)
-    pair_control_axis.set_yticks([0.0, 0.04, 0.08, 0.12])
-    gamma_control_axis.set_ylim(-0.006, 0.115)
-    gamma_control_axis.set_yticks([0, 0.05, 0.10])
+        axis.barh(locations - category_offset, nh_values, height=0.29, color=COLORS[0], edgecolor="0.25", linewidth=0.55)
+        axis.barh(locations + category_offset, hermitian_values, height=0.29, color="0.90", edgecolor="0.25", hatch="///", linewidth=0.55)
+        axis.set(yticks=locations, yticklabels=[r"$L=24$", r"$L=40$"], xlabel=ylabel, ylim=(1.55, -0.55))
+        axis.grid(axis="x", color="0.93", linewidth=0.45)
+        axis.tick_params(axis="y", left=False, right=False)
+    pair_control_axis.set_xlim(0.0, 0.145)
+    pair_control_axis.set_xticks([0.0, 0.05, 0.10])
+    gamma_control_axis.set_xlim(0.0, 0.115)
+    gamma_control_axis.set_xticks([0, 0.05, 0.10])
+    # Zero-length bars are marked explicitly, without inventing a visible height.
+    for y, value in zip(locations + category_offset, control_gamma):
+        if np.isclose(value, 0, atol=1e-12):
+            gamma_control_axis.plot(0, y, marker="|", color="0.25", ms=6, clip_on=False)
+            gamma_control_axis.annotate("0", (0, y), xytext=(4, 0), textcoords="offset points", va="center", fontsize=7)
     control_header.legend(
         handles=control_handles,
         loc="center",
-        ncol=1,
+        ncol=2,
         frameon=False,
         handlelength=1.35,
         handletextpad=0.35,
