@@ -15,6 +15,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib.ticker import LogLocator, NullFormatter
 import numpy as np
 import pandas as pd
 
@@ -32,12 +33,12 @@ plt.rcParams.update(
         "font.family": "sans-serif",
         "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
         "mathtext.fontset": "stixsans",
-        "font.size": 8.0,
-        "axes.labelsize": 8.0,
+        "font.size": 8.5,
+        "axes.labelsize": 8.5,
         "axes.titlesize": 7.8,
         "xtick.labelsize": 7.5,
         "ytick.labelsize": 7.5,
-        "legend.fontsize": 7.2,
+        "legend.fontsize": 7.5,
         "axes.linewidth": 0.8,
         "xtick.major.width": 0.8,
         "ytick.major.width": 0.8,
@@ -57,6 +58,9 @@ plt.rcParams.update(
         "ps.fonttype": 42,
         "savefig.dpi": 600,
         "savefig.facecolor": "white",
+        "axes.axisbelow": True,
+        "figure.constrained_layout.h_pad": 0.09,
+        "figure.constrained_layout.w_pad": 0.06,
     }
 )
 
@@ -107,8 +111,8 @@ def _panel_label(axis: plt.Axes, label: str, *, x: float = -0.12, y: float = 1.0
         y,
         label,
         transform=axis.transAxes,
-        fontsize=9.5,
-        fontweight="bold",
+        fontsize=9.0,
+        fontweight="normal",
         va="bottom",
         ha="left",
         clip_on=False,
@@ -116,11 +120,29 @@ def _panel_label(axis: plt.Axes, label: str, *, x: float = -0.12, y: float = 1.0
 
 
 def _save(figure: plt.Figure, output: Path, stem: str) -> None:
+    # Use consistent journal-size typography, including compact nested panels.
+    for axis in figure.axes:
+        for legend in [axis.get_legend()]:
+            if legend is not None:
+                for label in legend.get_texts():
+                    label.set_fontsize(max(7.0, label.get_fontsize()))
+        for line in axis.get_xgridlines() + axis.get_ygridlines():
+            line.set_color("0.93")
+            line.set_linewidth(0.45)
     output.mkdir(parents=True, exist_ok=True)
     save_options = {"bbox_inches": "tight", "pad_inches": 0.035, "facecolor": "white"}
     figure.savefig(output / f"{stem}.pdf", **save_options)
     figure.savefig(output / f"{stem}.png", dpi=600, **save_options)
     plt.close(figure)
+
+
+def _legend_above(axis: plt.Axes, *, ncol: int = 2, **kwargs) -> None:
+    """Reserve layout space for a legend instead of covering numerical data."""
+    axis.legend(
+        loc="lower center", bbox_to_anchor=(0.5, 1.025), borderaxespad=0.0,
+        frameon=False, ncol=ncol, handlelength=1.7, handletextpad=0.4,
+        columnspacing=0.9, **kwargs,
+    )
 
 
 def _run_profile(profiles: pd.DataFrame, run_id: str) -> pd.DataFrame:
@@ -189,11 +211,12 @@ def _plot_validation_summary(axis: plt.Axes, summary: pd.DataFrame) -> None:
                     label=label if label not in shown_labels else None,
                 )
                 shown_labels.add(label)
-    axis.set_yscale("log")
+    axis.ticklabel_format(axis="y", style="sci", scilimits=(0, 0), useMathText=True)
+    axis.set_ylim(bottom=0)
     axis.set_xticks(range(len(categories)), [label for label, _ in categories])
     axis.set_ylabel("max. relative discrepancy")
     axis.grid(axis="y", which="major", color="0.88", lw=0.5)
-    axis.legend(loc="lower left", frameon=False, handlelength=1.0, labelspacing=0.2)
+    _legend_above(axis)
 
 
 def figure02(data: Path, output: Path) -> None:
@@ -294,7 +317,7 @@ def figure03(data: Path, output: Path) -> None:
     audit = _accepted(_read(data / "branch_audit.csv"))
     collapse = _read(data / "collapse_quality.csv")
     matched = _read(data / "matched_gl_quality.csv")
-    figure = plt.figure(figsize=(7.0, 4.55), layout="constrained")
+    figure = plt.figure(figsize=(7.0, 4.8), layout="constrained")
     grid = figure.add_gridspec(2, 2, height_ratios=(1.0, 0.72), wspace=0.17, hspace=0.14)
     lambda_axis = figure.add_subplot(grid[0, 0])
     chi_axis = figure.add_subplot(grid[0, 1])
@@ -335,16 +358,15 @@ def figure03(data: Path, output: Path) -> None:
     quality = collapse.set_index("coordinate").reindex(order)
     x = np.arange(2)
     width = 0.34
-    quality_axis.bar(x - width / 2, quality["mean_log10_std"], width, color=("0.72", COLORS[0]), label="mean")
-    quality_axis.bar(x + width / 2, quality["max_log10_std"], width, color=("0.88", COLORS[2]), edgecolor="0.25", linewidth=0.55, label="maximum")
+    quality_axis.bar(x - width / 2, quality["mean_log10_std"], width, color=COLORS[0], edgecolor="0.25", linewidth=0.55, label="mean")
+    quality_axis.bar(x + width / 2, quality["max_log10_std"], width, color="0.85", hatch="//", edgecolor="0.25", linewidth=0.55, label="maximum")
     quality_axis.set(
         xticks=x,
         xticklabels=[r"$\lambda$", r"$\chi$"],
         ylabel=r"std. dev. of $\log_{10}M_{\rm mc}$",
         ylim=(0.0, 1.18),
     )
-    quality_axis.legend(frameon=False, loc="upper right", ncol=2, handlelength=1.2, columnspacing=0.8)
-    quality_axis.set_title("five-branch audit", loc="left", pad=3.0)
+    _legend_above(quality_axis)
 
     matched_spec = matched.iloc[0]
     matched_keys = (
@@ -363,12 +385,9 @@ def figure03(data: Path, output: Path) -> None:
         xlabel=r"$\chi=\lambda e^{gL}$", ylabel=r"$M_{\rm mc}$",
         xlim=(1.0e-5, 1.0), ylim=(1.0e-8, 1.05),
     )
-    matched_axis.legend(frameon=False, loc="upper left", handlelength=1.6)
+    _legend_above(matched_axis)
     matched_axis.grid(which="major", color="0.90", lw=0.55)
-    matched_annotation = (
-        rf"$gL={float(matched_spec['gL']):.1f}$" + "\n"
-        + rf"mean $|\Delta\log_{{10}}M|={float(matched_spec['mean_abs_log10_difference']):.2f}$"
-    )
+    matched_annotation = rf"$gL={float(matched_spec['gL']):.1f}$"
     matched_axis.text(
         0.98, 0.06, matched_annotation,
         transform=matched_axis.transAxes, ha="right", va="bottom", fontsize=7.1,
@@ -398,37 +417,39 @@ def figure04(data: Path, output: Path) -> None:
     spectra = _read(data / "spectra.csv")
     snapshots = _read(data / "fig4_snapshots.csv")
 
-    figure = plt.figure(figsize=(7.0, 4.8), layout="constrained")
+    figure = plt.figure(figsize=(7.0, 5.0), layout="constrained")
     outer = figure.add_gridspec(2, 2, height_ratios=(0.86, 1.0), wspace=0.16, hspace=0.14)
     trajectory_axis = figure.add_subplot(outer[0, 0])
     profile_axis = figure.add_subplot(outer[0, 1])
     spectrum_grid = outer[1, 0].subgridspec(1, 3, wspace=0.08)
     spectrum_axes = [figure.add_subplot(spectrum_grid[0, index]) for index in range(3)]
-    control_grid = outer[1, 1].subgridspec(1, 2, wspace=0.12)
-    pair_control_axis = figure.add_subplot(control_grid[0, 0])
-    gamma_control_axis = figure.add_subplot(control_grid[0, 1])
+    control_grid = outer[1, 1].subgridspec(2, 2, height_ratios=(0.16, 1.0), wspace=0.12, hspace=0.02)
+    control_header = figure.add_subplot(control_grid[0, :])
+    control_header.set_axis_off()
+    pair_control_axis = figure.add_subplot(control_grid[1, 0])
+    gamma_control_axis = figure.add_subplot(control_grid[1, 1])
 
     trajectory = _unique_lambda(branch.loc[(branch["L"] == 40) & np.isclose(branch["g"], 0.05) & (branch["chi"] > 0.0)])
     diagnostics = (
         ("metric_violation", COLORS[0], "o", r"$M_{\rm mc}$"),
         ("delta_P_bulk", COLORS[1], "s", r"$\delta P_{\rm bulk}$"),
     )
-    for column, colour, marker, label in diagnostics:
+    for index, (column, colour, marker, label) in enumerate(diagnostics):
         source = trajectory.loc[trajectory[column] > 0.0]
         trajectory_axis.loglog(
             source["chi"], source[column], color=colour, marker=marker,
             markevery=_sparse_every(len(source), 10), markerfacecolor="white", markeredgewidth=0.85,
-            ms=3.9, label=label,
+            ms=3.9, linestyle=LINESTYLES[index], label=label,
         )
     gamma = trajectory.loc[trajectory["gamma_max_over_t"] > 1.0e-12]
     trajectory_axis.loglog(
         gamma["chi"], gamma["gamma_max_over_t"], color=COLORS[2], marker="^",
         markevery=_sparse_every(len(gamma), 10), markerfacecolor="white", markeredgewidth=0.85,
-        ms=3.9, label=r"$\Gamma_{\max}/t$",
+        ms=3.9, linestyle="-.", label=r"$\Gamma_{\max}/t$",
     )
-    trajectory_axis.set(xlabel=r"$\chi=\lambda e^{gL}$", ylabel="diagnostic magnitude", ylim=(1.0e-10, 1.4))
+    trajectory_axis.set(xlabel=r"$\chi=\lambda e^{gL}$", ylabel="diagnostic magnitude", xlim=(1e-4, 10), ylim=(1.0e-8, 1.4))
     trajectory_axis.grid(which="major", color="0.90", lw=0.55)
-    trajectory_axis.legend(loc="upper left", frameon=False, handlelength=1.55, labelspacing=0.3)
+    _legend_above(trajectory_axis, ncol=3)
     trajectory_axis.text(0.97, 0.05, r"$L=40,\ g=0.05$", transform=trajectory_axis.transAxes, ha="right", va="bottom")
 
     all_snapshots = snapshots.loc[snapshots["L"] == 40].sort_values("lambda")
@@ -440,10 +461,7 @@ def figure04(data: Path, output: Path) -> None:
         colour, linestyle = snapshot_styles[min(index, len(snapshot_styles) - 1)]
         profile_axis.plot(profile["j"], profile["P_real"], color=colour, linestyle=linestyle, lw=1.2, label=_snapshot_label(row))
     profile_axis.set(xlabel=r"site $j$", ylabel=r"$\operatorname{Re}P_j/t^2$")
-    profile_axis.legend(
-        loc="lower center", bbox_to_anchor=(0.5, 0.015), ncol=2,
-        frameon=False, handlelength=1.75, labelspacing=0.25, columnspacing=0.8,
-    )
+    _legend_above(profile_axis, ncol=2)
 
     # Three readable small multiples are more informative than overlaid spectra.
     # Select an existing state with a visibly complex spectrum, rather than the
@@ -514,12 +532,12 @@ def figure04(data: Path, output: Path) -> None:
         axis.yaxis.labelpad = 2.0
     pair_control_axis.set_ylim(0.0, 0.135)
     pair_control_axis.set_yticks([0.0, 0.04, 0.08, 0.12])
-    gamma_control_axis.set_ylim(0.0, 0.11)
-    figure.legend(
+    gamma_control_axis.set_ylim(-0.006, 0.115)
+    gamma_control_axis.set_yticks([0, 0.05, 0.10])
+    control_header.legend(
         handles=control_handles,
         loc="center",
-        bbox_to_anchor=(0.77, 0.455),
-        ncol=2,
+        ncol=1,
         frameon=False,
         handlelength=1.35,
         handletextpad=0.35,
@@ -531,7 +549,7 @@ def figure04(data: Path, output: Path) -> None:
     _panel_label(trajectory_axis, "(a)", x=-0.15)
     _panel_label(profile_axis, "(b)", x=-0.15)
     _panel_label(spectrum_axes[0], "(c)", x=-0.42, y=1.06)
-    _panel_label(pair_control_axis, "(d)", x=-0.42, y=1.06)
+    _panel_label(control_header, "(d)", x=-0.15, y=1.06)
     _save(figure, output, "fig04_pbc_endpoint")
 
 
@@ -561,16 +579,19 @@ def figure_s1(data: Path, output: Path) -> None:
 
     error_source = raw if not raw.empty else rescaled
     if not error_source.empty:
-        error_axis.semilogy(
+        error_axis.plot(
             error_source["q"], error_source["covariance_error"], color=COLORS[0], linestyle="-", marker="o",
             markerfacecolor="white", label="direct / rescaled\n(indistinguishable)",
         )
     error_axis.set(xlabel=r"$q=g(L-1)$", ylabel="relative covariance error")
+    error_axis.set_ylim(0, 5.3e-11)
+    error_axis.ticklabel_format(axis="y", style="sci", scilimits=(0, 0), useMathText=True)
     error_axis.grid(which="major", color="0.90", lw=0.55)
-    error_axis.legend(loc="lower right", frameon=False, handlelength=1.55)
+    _legend_above(error_axis, ncol=1)
 
     _plot_validation_summary(validation_axis, validation)
-    validation_axis.set_title("validation set", loc="left", pad=2.0)
+    for axis in (condition_axis, error_axis):
+        axis.set_xticks([0, 4, 8, 12, 16])
 
     _panel_label(condition_axis, "(a)", x=-0.18)
     _panel_label(error_axis, "(b)", x=-0.18)
@@ -620,8 +641,6 @@ def figure_s2(data: Path, output: Path) -> None:
         loc="outside upper center",
         ncol=3,
         frameon=False,
-        title=r"$q=g(L-1)$; line style denotes direction",
-        title_fontsize=7.2,
         handlelength=1.7,
         handletextpad=0.4,
         columnspacing=1.0,
@@ -631,6 +650,10 @@ def figure_s2(data: Path, output: Path) -> None:
     ldos_axis.set_ylabel(r"$t\,\rho_{\rm center}(\omega)$")
     directional_axis.set_ylabel(r"$t\,|G^{pp}_{ij}(\omega)|$")
     stripped_axis.set(xlabel=r"$\omega/t$", ylabel=r"$t\times$ stripped $|G^{pp}_{ij}(\omega)|$")
+    # Show the spectral window; the processed table retains the full tails.
+    stripped_axis.set_xlim(-2.7, 2.7)
+    directional_axis.set_ylim(1e-10, 1e4)
+    stripped_axis.set_ylim(1e-8, 1e2)
     for axis in axes:
         axis.grid(which="major", color="0.91", lw=0.5)
     ldos_axis.tick_params(labelbottom=False)
@@ -643,7 +666,7 @@ def figure_s2(data: Path, output: Path) -> None:
 
 S3_QUANTITIES = {
     "s_min": (r"$s_{\min}$", False),
-    "minimum_eigenvalue_separation": (r"minimum eigenvalue separation $/t$", True),
+    "minimum_eigenvalue_separation": (r"$d_{\min}/t$", True),
     "right_condition": (r"$\kappa(R)$", True),
     "field_residual": ("SCF field residual", True),
 }
@@ -674,17 +697,22 @@ def _plot_s3_quantity(axis: plt.Axes, branch: pd.DataFrame, column: str) -> None
     axis.set(xscale="log", xlabel=r"$\lambda$", ylabel=ylabel)
     if logarithmic_y:
         axis.set_yscale("log")
+        axis.yaxis.set_major_locator(LogLocator(base=10, subs=(1.0,), numticks=5))
+        axis.yaxis.set_minor_formatter(NullFormatter())
+    if column == "minimum_eigenvalue_separation":
+        axis.set_yticks([0.002, 0.01, 0.05], [r"$2\times10^{-3}$", r"$10^{-2}$", r"$5\times10^{-2}$"])
     axis.grid(which="major", color="0.90", lw=0.5)
 
 
 def _decorate_s3_threshold(axis: plt.Axes, column: str) -> None:
     if column == "s_min":
         axis.axhline(0.70, color="0.38", linestyle="--", lw=0.85)
-        axis.text(0.98, 0.08, "acceptance", transform=axis.transAxes, ha="right", va="bottom", fontsize=7.0)
+        axis.text(0.03, 0.23, r"$s_{\min}\geq0.70$", transform=axis.transAxes, ha="left", va="bottom", fontsize=7.5)
         axis.set_ylim(0.66, 1.03)
     elif column == "field_residual":
         axis.axhline(1.0e-10, color="0.38", linestyle="--", lw=0.85)
-        axis.text(0.02, 0.08, "SCF tolerance", transform=axis.transAxes, ha="left", va="bottom", fontsize=7.0)
+        axis.text(0.03, 0.10, r"tolerance $10^{-10}$", transform=axis.transAxes, ha="left", va="bottom", fontsize=7.5)
+        axis.set_ylim(top=1.3e-10)
 
 
 def _make_s3_split(
@@ -757,7 +785,7 @@ def figure_s4(data: Path, output: Path) -> None:
 
     audit = _read(data / "branch_audit.csv")
     forward = _accepted(audit)
-    figure, axes = plt.subplots(2, 2, figsize=(7.0, 4.55), layout="constrained")
+    figure, axes = plt.subplots(2, 2, figsize=(7.0, 4.9), layout="constrained")
     filling_axis, separation_axis, algebra_axis, reverse_axis = axes.ravel()
 
     filling_data = _read(data / "filling_audit.csv")
@@ -778,7 +806,7 @@ def figure_s4(data: Path, output: Path) -> None:
         )
     filling_axis.axhline(0.0, color="0.35", linestyle=":", lw=0.9)
     filling_axis.set(xlabel=r"$\mu/t$", ylabel=r"$N(\mu)/L-n_{\rm target}$")
-    filling_axis.legend(frameon=False, loc="upper left", ncol=3, handlelength=1.4, columnspacing=0.8)
+    _legend_above(filling_axis, ncol=3)
 
     audit_keys = ((20, 0.10), (24, 0.05), (24, 0.10), (40, 0.05), (40, 0.10))
     audit_colours = ("#6A3D9A", *COLORS)
@@ -794,7 +822,7 @@ def figure_s4(data: Path, output: Path) -> None:
         xlim=(1.0e-4, 1.05), ylim=(0.345, 0.395),
     )
     separation_axis.legend(
-        frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.015), ncol=3,
+        frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.025), ncol=2,
         handlelength=1.45, handletextpad=0.3, columnspacing=0.65, fontsize=6.35,
         borderaxespad=0.0,
     )
@@ -815,11 +843,7 @@ def figure_s4(data: Path, output: Path) -> None:
         )
     algebra_axis.axhline(1.0e-8, color="0.35", linestyle=":", lw=0.9, label="acceptance bound")
     algebra_axis.set(xlabel=r"$\lambda$", ylabel="projector residual", ylim=(5.0e-17, 3.0e-7))
-    algebra_axis.legend(frameon=False, loc="center left", handlelength=1.45, fontsize=6.8)
-    algebra_axis.text(
-        0.98, 0.94, r"values $<10^{-16}$ shown at floor",
-        transform=algebra_axis.transAxes, ha="right", va="top", fontsize=6.6,
-    )
+    _legend_above(algebra_axis, ncol=2)
 
     returned = audit.loc[audit["kind"] == "reverse_obc_endpoint"].sort_values(["L", "g"])
     labels = [rf"${int(row.L)},{float(row.g):.2f}$" for row in returned.itertuples()]
@@ -852,7 +876,7 @@ def figure_s4(data: Path, output: Path) -> None:
     )
     reverse_axis.grid(axis="y", which="major", color="0.90", lw=0.5, zorder=0)
     reverse_axis.legend(
-        frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.015), ncol=4,
+        frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.025), ncol=2,
         handlelength=1.35, handletextpad=0.25, columnspacing=0.55, fontsize=6.35,
         borderaxespad=0.0,
     )
